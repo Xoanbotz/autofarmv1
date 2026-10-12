@@ -1,15 +1,16 @@
 --[[
 =========================================================
-  UNIVERSAL AUTOFARM v2.0 - FIXED & DRAGGABLE GUI
+  UNIVERSAL AUTOFARM v3.0 - FILTERED NPC + FLOATING BUBBLE
   Author: Kyriel (for Boss)
   Executor: Delta / Codex / Wave / Xeno
 =========================================================
 
-FIX:
-  - Scan NPC lebih akurat (multi-method)
-  - Autofarm lebih robust
-  - GUI bisa digerakin (draggable)
-  - Debug console buat troubleshooting
+FITUR:
+  - Filter NPC: cuma serang yang punya darah & bisa damage
+  - Skip NPC quest giver, vendor, passive NPC
+  - Floating bubble button (bisa digeser)
+  - GUI bisa di-hide/show dari bubble
+  - Real-time NPC counter
 =========================================================
 ]]
 
@@ -21,6 +22,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local VirtualUser = game:GetService("VirtualUser")
 local TweenService = game:GetService("TweenService")
+local CollectionService = game:GetService("CollectionService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -31,25 +33,26 @@ local humanoid = character:WaitForChild("Humanoid")
 -- KONFIGURASI
 -- ============================================================
 local CONFIG = {
-    NPC_FOLDER_NAME = nil,           -- Auto-detect
-    ATTACK_RANGE = 100,              -- Jarak teleport ke NPC
-    TELEPORT_HEIGHT = 3,             -- Ketinggian teleport
-    ATTACK_COOLDOWN = 0.15,          -- Jeda antar serangan
-    LOOP_DELAY = 0.3,                -- Jeda antar loop
-    AUTO_EQUIP_TOOL = true,          -- Auto equip weapon
-    USE_SKILLS = true,               -- Pake skill
+    NPC_FOLDER_NAME = nil,
+    ATTACK_RANGE = 100,
+    TELEPORT_HEIGHT = 3,
+    ATTACK_COOLDOWN = 0.15,
+    LOOP_DELAY = 0.3,
+    AUTO_EQUIP_TOOL = true,
+    USE_SKILLS = true,
     SKILL_KEYS = {"Z", "X", "C", "V", "F"},
-    SKILL_COOLDOWN = 1.5,            -- Cooldown skill
-    DEBUG = true,                    -- Print debug ke console
+    SKILL_COOLDOWN = 1.5,
+    DEBUG = true,
 }
 
 local isRunning = false
 local currentTarget = nil
 local lastSkillTime = 0
 local detectedFolders = {}
+local skippedCount = 0
 
 -- ============================================================
--- FUNGSI DEBUG LOG
+-- DEBUG LOG
 -- ============================================================
 local function log(msg)
     if CONFIG.DEBUG then
@@ -58,17 +61,79 @@ local function log(msg)
 end
 
 -- ============================================================
--- FUNGSI: DETEKSI OTOMATIS FOLDER NPC (MULTI-METHOD)
+-- FILTER NPC: HANYA YANG PUNYA DARAH & DAMAGE-DEALING
 -- ============================================================
 local function isNPC(model)
     if not model or not model:IsA("Model") then return false end
+    
+    -- Skip karakter player
     if Players:GetPlayerFromCharacter(model) then return false end
     
+    -- Harus punya Humanoid
     local hum = model:FindFirstChildOfClass("Humanoid")
     if not hum then return false end
+    
+    -- FILTER 1: Harus hidup
     if hum.Health <= 0 then return false end
     
-    -- Cek punya root part
+    -- FILTER 2: MaxHealth harus > 0 (skip quest giver / passive NPC)
+    if hum.MaxHealth <= 0 then
+        skippedCount = skippedCount + 1
+        return false
+    end
+    
+    -- FILTER 3: Cek atribut invincible / quest giver
+    if hum:GetAttribute("Invincible") == true then return false end
+    if hum:GetAttribute("IsQuestGiver") == true then return false end
+    if hum:GetAttribute("CanBeDamaged") == false then return false end
+    if hum:GetAttribute("Damageable") == false then return false end
+    if model:GetAttribute("Invincible") == true then return false end
+    if model:GetAttribute("IsQuestGiver") == true then return false end
+    if model:GetAttribute("CanBeDamaged") == false then return false end
+    
+    -- FILTER 4: Skip berdasarkan nama (quest giver, vendor, dll)
+    local nameLower = string.lower(model.Name)
+    local blacklist = {
+        "quest", "vendor", "shop", "merchant", "trader",
+        "dialog", "interact", "friendly", "ally", "civilian",
+        "npc_quest", "npcquest", "npcquestgiver", "questgiver",
+        "quest_giver", "shopkeeper", "blacksmith", "innkeeper",
+        "healer", "trainer", "banker", "auctioneer"
+    }
+    for _, keyword in ipairs(blacklist) do
+        if string.find(nameLower, keyword) then
+            skippedCount = skippedCount + 1
+            return false
+        end
+    end
+    
+    -- FILTER 5: Skip kalo parent name ada keyword quest
+    if model.Parent then
+        local parentLower = string.lower(model.Parent.Name)
+        local parentBlacklist = {"quest", "vendor", "shop", "friendly", "passive", "civilian"}
+        for _, keyword in ipairs(parentBlacklist) do
+            if string.find(parentLower, keyword) then
+                skippedCount = skippedCount + 1
+                return false
+            end
+        end
+    end
+    
+    -- FILTER 6: Cek tag CollectionService
+    local tags = CollectionService:GetTags(model)
+    for _, tag in ipairs(tags) do
+        local tagLower = string.lower(tag)
+        if string.find(tagLower, "quest") 
+            or string.find(tagLower, "friendly")
+            or string.find(tagLower, "passive")
+            or string.find(tagLower, "vendor")
+            or string.find(tagLower, "invincible") then
+            skippedCount = skippedCount + 1
+            return false
+        end
+    end
+    
+    -- FILTER 7: Harus punya root part
     local root = model:FindFirstChild("HumanoidRootPart") 
         or model:FindFirstChild("Head") 
         or model:FindFirstChild("Torso")
@@ -79,8 +144,12 @@ local function isNPC(model)
     return true
 end
 
+-- ============================================================
+-- DETEKSI FOLDER NPC
+-- ============================================================
 local function detectNPCFolders()
     local folderCount = {}
+    skippedCount = 0
     
     local function scan(instance, depth)
         depth = depth or 0
@@ -92,7 +161,6 @@ local function detectNPCFolders()
                 folderCount[parentName] = (folderCount[parentName] or 0) + 1
             end
             
-            -- Rekursif ke dalam folder/model
             if obj:IsA("Folder") or obj:IsA("Model") or obj:IsA("Workspace") then
                 if #obj:GetChildren() > 0 then
                     scan(obj, depth + 1)
@@ -103,7 +171,6 @@ local function detectNPCFolders()
     
     scan(workspace, 0)
     
-    -- Sort
     local sorted = {}
     for name, count in pairs(folderCount) do
         table.insert(sorted, {name = name, count = count})
@@ -114,7 +181,7 @@ local function detectNPCFolders()
 end
 
 -- ============================================================
--- FUNGSI: CARI SEMUA NPC
+-- CARI SEMUA NPC (FILTERED)
 -- ============================================================
 local function getAllNPCs()
     local npcs = {}
@@ -131,7 +198,7 @@ local function getAllNPCs()
                     or obj:FindFirstChild("Torso")
                     or obj:FindFirstChild("UpperTorso")
                 
-                if hum and root and hum.Health > 0 then
+                if hum and root and hum.Health > 0 and hum.MaxHealth > 0 then
                     local dist = (humanoidRootPart.Position - root.Position).Magnitude
                     table.insert(npcs, {
                         model = obj,
@@ -156,12 +223,11 @@ local function getAllNPCs()
 end
 
 -- ============================================================
--- FUNGSI: TELEPORT KE NPC
+-- TELEPORT KE NPC
 -- ============================================================
 local function teleportToNPC(npc)
     if not npc or not npc.root or not npc.root.Parent then return false end
     
-    -- Update humanoidRootPart referensi
     if not character or not character.Parent then
         character = player.Character or player.CharacterAdded:Wait()
         humanoidRootPart = character:WaitForChild("HumanoidRootPart")
@@ -181,13 +247,12 @@ local function teleportToNPC(npc)
 end
 
 -- ============================================================
--- FUNGSI: SERANG NPC
+-- SERANG NPC
 -- ============================================================
 local function attackNPC(npc)
     if not npc or not npc.model or not npc.model.Parent then return end
     if not npc.humanoid or npc.humanoid.Health <= 0 then return end
     
-    -- Auto equip tool
     if CONFIG.AUTO_EQUIP_TOOL then
         local tool = character:FindFirstChildOfClass("Tool")
         if not tool then
@@ -201,20 +266,17 @@ local function attackNPC(npc)
         end
     end
     
-    -- Aktifkan tool
     local tool = character:FindFirstChildOfClass("Tool")
     if tool then
         pcall(function() tool:Activate() end)
     end
     
-    -- Klik mouse (buat game yang butuh click)
     pcall(function()
         VirtualUser:Button1Down(Vector2.new(0, 0))
         task.wait(0.03)
         VirtualUser:Button1Up(Vector2.new(0, 0))
     end)
     
-    -- Pake skill
     if CONFIG.USE_SKILLS and tick() - lastSkillTime > CONFIG.SKILL_COOLDOWN then
         for _, key in ipairs(CONFIG.SKILL_KEYS) do
             pcall(function()
@@ -228,19 +290,17 @@ local function attackNPC(npc)
 end
 
 -- ============================================================
--- FUNGSI: START AUTOFARM
+-- START AUTOFARM
 -- ============================================================
 local function startAutoFarm()
     if isRunning then return end
     isRunning = true
-    
     log("Started!")
     
     task.spawn(function()
         local emptyCount = 0
         
         while isRunning do
-            -- Update referensi karakter
             if not character or not character.Parent then
                 character = player.Character or player.CharacterAdded:Wait()
                 humanoidRootPart = character:WaitForChild("HumanoidRootPart")
@@ -269,7 +329,6 @@ local function startAutoFarm()
                         break
                     end
                     
-                    -- Teleport ulang kalo NPC bergerak jauh
                     if currentTarget.root and currentTarget.root.Parent then
                         local dist = (humanoidRootPart.Position - currentTarget.root.Position).Magnitude
                         if dist > CONFIG.ATTACK_RANGE then
@@ -293,7 +352,7 @@ local function startAutoFarm()
 end
 
 -- ============================================================
--- FUNGSI: STOP AUTOFARM
+-- STOP AUTOFARM
 -- ============================================================
 local function stopAutoFarm()
     isRunning = false
@@ -305,7 +364,7 @@ end
 -- SCAN AWAL
 -- ============================================================
 log("==================================================")
-log("     NPC DETECTOR + AUTOFARM v2.0")
+log("     AUTOFARM v3.0 - FILTERED NPC + BUBBLE")
 log("==================================================")
 
 detectedFolders = detectNPCFolders()
@@ -318,13 +377,13 @@ if #detectedFolders > 0 then
     CONFIG.NPC_FOLDER_NAME = detectedFolders[1].name
     log("Auto-select: " .. CONFIG.NPC_FOLDER_NAME)
 else
-    log("WARNING: Gak ada NPC terdeteksi! Coba manual atau rescan.")
+    log("WARNING: Gak ada NPC terdeteksi!")
 end
 
 log("==================================================")
 
 -- ============================================================
--- GUI DRAGGABLE
+-- GUI SETUP
 -- ============================================================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "AutofarmGUI"
@@ -332,21 +391,23 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = player:WaitForChild("PlayerGui")
 
--- Main Frame
+-- ============================================================
+-- MAIN FRAME (GUI UTAMA)
+-- ============================================================
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 240, 0, 250)
+MainFrame.Size = UDim2.new(0, 240, 0, 260)
 MainFrame.Position = UDim2.new(0, 20, 0, 100)
 MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
 MainFrame.BorderSizePixel = 0
-MainFrame.Active = true  -- WAJIB buat draggable
-MainFrame.Draggable = true  -- WAJIB buat draggable
+MainFrame.Active = true
+MainFrame.Visible = true
 MainFrame.Parent = ScreenGui
 
 local UICorner = Instance.new("UICorner")
 UICorner.CornerRadius = UDim.new(0, 10)
 UICorner.Parent = MainFrame
 
--- Title Bar (buat drag)
+-- Title Bar
 local TitleBar = Instance.new("Frame")
 TitleBar.Size = UDim2.new(1, 0, 0, 35)
 TitleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
@@ -358,13 +419,12 @@ local TitleCorner = Instance.new("UICorner")
 TitleCorner.CornerRadius = UDim.new(0, 10)
 TitleCorner.Parent = TitleBar
 
--- Title Text
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -60, 1, 0)
 Title.Position = UDim2.new(0, 10, 0, 0)
 Title.BackgroundTransparency = 1
 Title.TextColor3 = Color3.fromRGB(0, 255, 150)
-Title.Text = "🎯 AUTOFARM v2.0"
+Title.Text = "🎯 AUTOFARM v3.0"
 Title.TextSize = 14
 Title.Font = Enum.Font.GothamBold
 Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -385,7 +445,7 @@ local MinCorner = Instance.new("UICorner")
 MinCorner.CornerRadius = UDim.new(0, 5)
 MinCorner.Parent = MinBtn
 
--- Close Button
+-- Close Button (Hide ke bubble)
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Size = UDim2.new(0, 25, 0, 25)
 CloseBtn.Position = UDim2.new(1, -28, 0, 5)
@@ -418,16 +478,28 @@ CountLabel.Size = UDim2.new(1, -20, 0, 20)
 CountLabel.Position = UDim2.new(0, 10, 0, 65)
 CountLabel.BackgroundTransparency = 1
 CountLabel.TextColor3 = Color3.fromRGB(200, 200, 100)
-CountLabel.Text = "NPC: 0"
+CountLabel.Text = "NPC Target: 0"
 CountLabel.TextSize = 11
 CountLabel.Font = Enum.Font.Gotham
 CountLabel.TextXAlignment = Enum.TextXAlignment.Left
 CountLabel.Parent = MainFrame
 
+-- Skipped Label
+local SkipLabel = Instance.new("TextLabel")
+SkipLabel.Size = UDim2.new(1, -20, 0, 20)
+SkipLabel.Position = UDim2.new(0, 10, 0, 85)
+SkipLabel.BackgroundTransparency = 1
+SkipLabel.TextColor3 = Color3.fromRGB(150, 100, 150)
+SkipLabel.Text = "Skipped: 0 (Quest/Passive)"
+SkipLabel.TextSize = 10
+SkipLabel.Font = Enum.Font.Gotham
+SkipLabel.TextXAlignment = Enum.TextXAlignment.Left
+SkipLabel.Parent = MainFrame
+
 -- Start Button
 local ToggleButton = Instance.new("TextButton")
 ToggleButton.Size = UDim2.new(1, -20, 0, 45)
-ToggleButton.Position = UDim2.new(0, 10, 0, 90)
+ToggleButton.Position = UDim2.new(0, 10, 0, 110)
 ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 170, 0)
 ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 ToggleButton.Text = "▶ START"
@@ -442,7 +514,7 @@ BtnCorner.Parent = ToggleButton
 -- Status Label
 local StatusLabel = Instance.new("TextLabel")
 StatusLabel.Size = UDim2.new(1, -20, 0, 20)
-StatusLabel.Position = UDim2.new(0, 10, 0, 140)
+StatusLabel.Position = UDim2.new(0, 10, 0, 160)
 StatusLabel.BackgroundTransparency = 1
 StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
 StatusLabel.Text = "Status: IDLE"
@@ -454,7 +526,7 @@ StatusLabel.Parent = MainFrame
 -- Rescan Button
 local RescanBtn = Instance.new("TextButton")
 RescanBtn.Size = UDim2.new(1, -20, 0, 30)
-RescanBtn.Position = UDim2.new(0, 10, 0, 165)
+RescanBtn.Position = UDim2.new(0, 10, 0, 185)
 RescanBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 80)
 RescanBtn.TextColor3 = Color3.fromRGB(200, 200, 255)
 RescanBtn.Text = "🔄 RESCAN NPC"
@@ -469,7 +541,7 @@ RescanCorner.Parent = RescanBtn
 -- Kill All Button
 local KillAllBtn = Instance.new("TextButton")
 KillAllBtn.Size = UDim2.new(1, -20, 0, 30)
-KillAllBtn.Position = UDim2.new(0, 10, 0, 200)
+KillAllBtn.Position = UDim2.new(0, 10, 0, 220)
 KillAllBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 50)
 KillAllBtn.TextColor3 = Color3.fromRGB(255, 200, 200)
 KillAllBtn.Text = "⚔ KILL SEMUA NPC"
@@ -481,59 +553,83 @@ local KillCorner = Instance.new("UICorner")
 KillCorner.CornerRadius = UDim.new(0, 6)
 KillCorner.Parent = KillAllBtn
 
--- Credit
-local Credit = Instance.new("TextLabel")
-Credit.Size = UDim2.new(1, 0, 0, 15)
-Credit.Position = UDim2.new(0, 0, 1, -15)
-Credit.BackgroundTransparency = 1
-Credit.TextColor3 = Color3.fromRGB(80, 80, 100)
-Credit.Text = "by Kyriel"
-Credit.TextSize = 9
-Credit.Font = Enum.Font.Gotham
-Credit.Parent = MainFrame
+-- ============================================================
+-- FLOATING BUBBLE (buat show/hide GUI)
+-- ============================================================
+local Bubble = Instance.new("TextButton")
+Bubble.Name = "FloatingBubble"
+Bubble.Size = UDim2.new(0, 50, 0, 50)
+Bubble.Position = UDim2.new(0, 20, 0, 100)
+Bubble.BackgroundColor3 = Color3.fromRGB(0, 170, 100)
+Bubble.TextColor3 = Color3.fromRGB(255, 255, 255)
+Bubble.Text = "🎯"
+Bubble.TextSize = 24
+Bubble.Font = Enum.Font.GothamBold
+Bubble.Visible = false  -- Awalnya hidden
+Bubble.Active = true
+Bubble.Parent = ScreenGui
+
+local BubbleCorner = Instance.new("UICorner")
+BubbleCorner.CornerRadius = UDim.new(1, 0)  -- Full circle
+BubbleCorner.Parent = Bubble
+
+local BubbleStroke = Instance.new("UIStroke")
+BubbleStroke.Color = Color3.fromRGB(0, 255, 150)
+BubbleStroke.Thickness = 2
+BubbleStroke.Parent = Bubble
 
 -- ============================================================
--- DRAGGABLE FUNCTION (MANUAL - lebih reliable dari .Draggable)
+-- DRAGGABLE FUNCTION (REUSABLE)
 -- ============================================================
-local dragging = false
-local dragStart = nil
-local startPos = nil
+local function makeDraggable(frame, dragHandle)
+    dragHandle = dragHandle or frame
+    
+    local dragging = false
+    local dragStart = nil
+    local startPos = nil
+    
+    dragHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 
+            or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+            
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement 
+            or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(
+                startPos.X.Scale, 
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale, 
+                startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+end
 
-TitleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 
-        or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = MainFrame.Position
-        
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement 
-        or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        MainFrame.Position = UDim2.new(
-            startPos.X.Scale, 
-            startPos.X.Offset + delta.X,
-            startPos.Y.Scale, 
-            startPos.Y.Offset + delta.Y
-        )
-    end
-end)
+-- Bikin draggable
+makeDraggable(MainFrame, TitleBar)
+makeDraggable(Bubble, Bubble)
 
 -- ============================================================
--- UPDATE NPC COUNT (REAL-TIME)
+-- REAL-TIME UPDATE
 -- ============================================================
 task.spawn(function()
     while task.wait(2) do
+        skippedCount = 0
         local npcs = getAllNPCs()
-        CountLabel.Text = "NPC: " .. #npcs
+        CountLabel.Text = "NPC Target: " .. #npcs
+        SkipLabel.Text = "Skipped: " .. skippedCount .. " (Quest/Passive)"
     end
 end)
 
@@ -567,10 +663,9 @@ RescanBtn.MouseButton1Click:Connect(function()
     if #detectedFolders > 0 then
         CONFIG.NPC_FOLDER_NAME = detectedFolders[1].name
         InfoLabel.Text = "Folder: " .. CONFIG.NPC_FOLDER_NAME
-        log("New folder: " .. CONFIG.NPC_FOLDER_NAME .. " (" .. detectedFolders[1].count .. " NPC)")
+        log("New folder: " .. CONFIG.NPC_FOLDER_NAME)
     else
         InfoLabel.Text = "Folder: NONE"
-        log("Gak ada NPC terdeteksi!")
     end
     
     RescanBtn.Text = "🔄 RESCAN NPC"
@@ -589,7 +684,6 @@ KillAllBtn.MouseButton1Click:Connect(function()
             teleportToNPC(npc)
             task.wait(0.05)
             
-            -- Serang sampe mati
             local timeout = tick() + 5
             while npc.humanoid and npc.humanoid.Health > 0 and tick() < timeout do
                 attackNPC(npc)
@@ -604,20 +698,30 @@ KillAllBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
+-- Minimize Button (collapse ke title bar)
 MinBtn.MouseButton1Click:Connect(function()
     if MainFrame.Size.Y.Offset > 50 then
         MainFrame.Size = UDim2.new(0, 240, 0, 35)
         MinBtn.Text = "□"
     else
-        MainFrame.Size = UDim2.new(0, 240, 0, 250)
+        MainFrame.Size = UDim2.new(0, 240, 0, 260)
         MinBtn.Text = "—"
     end
 end)
 
+-- Close Button (hide GUI, show bubble)
 CloseBtn.MouseButton1Click:Connect(function()
-    stopAutoFarm()
-    ScreenGui:Destroy()
-    log("GUI Closed.")
+    MainFrame.Visible = false
+    Bubble.Position = MainFrame.Position  -- Bubble muncul di posisi terakhir GUI
+    Bubble.Visible = true
+    log("GUI hidden. Klik bubble buat munculin lagi.")
+end)
+
+-- Bubble Click (show GUI, hide bubble)
+Bubble.MouseButton1Click:Connect(function()
+    MainFrame.Visible = true
+    Bubble.Visible = false
+    log("GUI shown.")
 end)
 
 -- ============================================================
@@ -634,6 +738,8 @@ end)
 -- ============================================================
 -- DONE
 -- ============================================================
-log("✅ Script loaded! Klik START buat mulai.")
-log("💡 Tips: Kalo NPC gak ke-detect, klik RESCAN.")
-log("💡 Drag title bar buat mindahin GUI.")
+log("✅ Script loaded!")
+log("💡 Klik × buat hide GUI → muncul bubble 🎯")
+log("💡 Klik bubble 🎯 buat munculin GUI lagi")
+log("💡 Bubble bisa digeser ke mana aja")
+log("💡 Drag title bar buat mindahin GUI")
