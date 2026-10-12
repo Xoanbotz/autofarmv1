@@ -1,15 +1,14 @@
 --[[
 =========================================================
-  UNIVERSAL AUTOFARM v4.4 - OPTIMIZED
+  UNIVERSAL AUTOFARM v4.5 - ANTI-DEATH EDITION
   Author: Kyriel (for Boss)
   Executor: Delta / Codex / Wave / Xeno
 
-OPTIMIZATION:
-  - Scan interval 2s → 10s
-  - Log cuma pas console kebuka
-  - Depth recursive 6 → 4
-  - Skill spam dikurangin
-  - Memory leak fix
+FITUR BARU:
+  - Teleport ke jarak aman (gak nempel NPC)
+  - Hit and run (mundur abis nyerang)
+  - Auto retreat kalo HP rendah
+  - Auto heal detection
 =========================================================
 ]]
 
@@ -32,7 +31,11 @@ local humanoid = character:WaitForChild("Humanoid")
 local CONFIG = {
     ATTACK_RANGE = 100,
     TELEPORT_HEIGHT = 3,
-    ATTACK_COOLDOWN = 0.2,       -- Dinaikin dikit biar gak overload
+    TELEPORT_DISTANCE = 20,       -- Jarak aman dari NPC (studs)
+    RETREAT_AFTER_ATTACK = true,  -- Mundur abis nyerang
+    RETREAT_DISTANCE = 30,        -- Jarak mundur
+    MIN_HP_PERCENT = 35,          -- Kabur kalo HP di bawah 35%
+    ATTACK_COOLDOWN = 0.2,
     LOOP_DELAY = 0.5,
     AUTO_EQUIP_TOOL = true,
     USE_SKILLS = true,
@@ -49,9 +52,9 @@ local CONFIG = {
         "TidecrusherCrab",
     },
     NPC_BLACKLIST = {},
-    MAX_DEPTH = 4,              -- Turun dari 6
-    LOG_LIMIT = 30,             -- Turun dari 100
-    SCAN_INTERVAL = 10,         -- Real-time update interval
+    MAX_DEPTH = 4,
+    LOG_LIMIT = 30,
+    SCAN_INTERVAL = 10,
 }
 
 local isRunning = false
@@ -63,7 +66,7 @@ local scanLog = {}
 local logCount = 0
 
 -- ============================================================
--- LOG SYSTEM (OPTIMIZED)
+-- LOG SYSTEM
 -- ============================================================
 local LogScroll = nil
 local ConsolePopup = nil
@@ -73,7 +76,6 @@ local function log(msg, color)
         print("[Autofarm] " .. tostring(msg))
     end
     
-    -- Skip kalo console gak kebuka (PENGHEMATAN BESAR)
     if not LogScroll or not LogScroll.Parent or not ConsolePopup or not ConsolePopup.Visible then
         return
     end
@@ -91,11 +93,8 @@ local function log(msg, color)
     newLabel.Parent = LogScroll
     
     logCount = logCount + 1
-    
-    -- Auto-scroll tanpa task.wait()
     LogScroll.CanvasPosition = Vector2.new(0, LogScroll.AbsoluteCanvasSize.Y)
     
-    -- Limit log
     if logCount > CONFIG.LOG_LIMIT then
         local first = nil
         for _, child in ipairs(LogScroll:GetChildren()) do
@@ -109,6 +108,16 @@ local function log(msg, color)
             logCount = logCount - 1
         end
     end
+end
+
+-- ============================================================
+-- CEK HP RENDAH
+-- ============================================================
+local function isHPLow()
+    if not humanoid or not humanoid.Parent then return false end
+    if humanoid.MaxHealth <= 0 then return false end
+    local hpPercent = (humanoid.Health / humanoid.MaxHealth) * 100
+    return hpPercent < CONFIG.MIN_HP_PERCENT
 end
 
 -- ============================================================
@@ -139,12 +148,10 @@ local function checkNPC(model)
         return false, "invincible"
     end
     
-    -- Cek atribut (cuma 3 yang penting biar cepet)
     if hum:GetAttribute("Invincible") == true then return false, "invincible" end
     if hum:GetAttribute("IsQuestGiver") == true then return false, "questgiver" end
     if model:GetAttribute("Invincible") == true then return false, "invincible" end
     
-    -- Whitelist check
     local nameLower = string.lower(model.Name)
     local isWhitelisted = false
     local matchedName = ""
@@ -161,7 +168,6 @@ local function checkNPC(model)
         return false, "not in whitelist"
     end
     
-    -- Root part check
     local root = model:FindFirstChild("HumanoidRootPart")
     if not root then
         root = model:FindFirstChild("Head") 
@@ -268,7 +274,7 @@ local function getAllNPCs()
 end
 
 -- ============================================================
--- TELEPORT
+-- TELEPORT KE JARAK AMAN (BUKAN NEMPEL)
 -- ============================================================
 local function teleportToNPC(npc)
     if not npc or not npc.root or not npc.root.Parent then return false end
@@ -281,10 +287,25 @@ local function teleportToNPC(npc)
     
     if not humanoidRootPart or not humanoidRootPart.Parent then return false end
     
-    local targetPos = npc.root.Position + Vector3.new(0, CONFIG.TELEPORT_HEIGHT, 0)
+    local npcPos = npc.root.Position
+    local myPos = humanoidRootPart.Position
+    
+    -- Arah dari NPC ke player
+    local direction = (myPos - npcPos)
+    direction = Vector3.new(direction.X, 0, direction.Z)
+    
+    if direction.Magnitude < 1 then
+        local angle = math.random() * math.pi * 2
+        direction = Vector3.new(math.cos(angle), 0, math.sin(angle))
+    end
+    
+    direction = direction.Unit
+    
+    -- Posisi target: NPC + arah * jarak aman
+    local safePos = npcPos + (direction * CONFIG.TELEPORT_DISTANCE) + Vector3.new(0, CONFIG.TELEPORT_HEIGHT, 0)
     
     pcall(function()
-        humanoidRootPart.CFrame = CFrame.new(targetPos)
+        humanoidRootPart.CFrame = CFrame.new(safePos, npcPos)
         humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
     end)
     
@@ -292,12 +313,47 @@ local function teleportToNPC(npc)
 end
 
 -- ============================================================
--- SERANG (OPTIMIZED SKILL)
+-- RETREAT (MUNDUR DARI NPC)
+-- ============================================================
+local function retreatFromNPC(npc)
+    if not npc or not npc.root or not npc.root.Parent then return end
+    if not humanoidRootPart or not humanoidRootPart.Parent then return end
+    
+    local npcPos = npc.root.Position
+    local myPos = humanoidRootPart.Position
+    
+    local direction = (myPos - npcPos)
+    direction = Vector3.new(direction.X, 0, direction.Z)
+    
+    if direction.Magnitude < 1 then
+        local angle = math.random() * math.pi * 2
+        direction = Vector3.new(math.cos(angle), 0, math.sin(angle))
+    end
+    
+    direction = direction.Unit
+    
+    local retreatPos = npcPos + (direction * CONFIG.RETREAT_DISTANCE) + Vector3.new(0, CONFIG.TELEPORT_HEIGHT, 0)
+    
+    pcall(function()
+        humanoidRootPart.CFrame = CFrame.new(retreatPos, npcPos)
+        humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+    end)
+end
+
+-- ============================================================
+-- SERANG (HIT AND RUN)
 -- ============================================================
 local function attackNPC(npc)
     if not npc or not npc.model or not npc.model.Parent then return end
     if not npc.humanoid or npc.humanoid.Health <= 0 then return end
     
+    -- Kalo HP rendah, retreat dulu
+    if isHPLow() then
+        retreatFromNPC(npc)
+        return
+    end
+    
+    -- Auto equip tool
     if CONFIG.AUTO_EQUIP_TOOL then
         local tool = character:FindFirstChildOfClass("Tool")
         if not tool then
@@ -310,19 +366,19 @@ local function attackNPC(npc)
         end
     end
     
-    -- Aktifkan tool 1x aja (bukan spam)
+    -- Activate tool
     local tool = character:FindFirstChildOfClass("Tool")
     if tool then
         pcall(function() tool:Activate() end)
     end
     
-    -- Klik mouse 1x
+    -- Click attack
     pcall(function()
         VirtualUser:Button1Down(Vector2.new(0, 0))
         VirtualUser:Button1Up(Vector2.new(0, 0))
     end)
     
-    -- Skill cuma 1x per cycle (bukan 5x spam)
+    -- Skill
     if CONFIG.USE_SKILLS and tick() - lastSkillTime > CONFIG.SKILL_COOLDOWN then
         for _, key in ipairs(CONFIG.SKILL_KEYS) do
             pcall(function()
@@ -333,6 +389,12 @@ local function attackNPC(npc)
         end
         lastSkillTime = tick()
     end
+    
+    -- HIT AND RUN
+    if CONFIG.RETREAT_AFTER_ATTACK then
+        task.wait(0.05)
+        retreatFromNPC(npc)
+    end
 end
 
 -- ============================================================
@@ -341,7 +403,7 @@ end
 local function startAutoFarm()
     if isRunning then return end
     isRunning = true
-    log("Started!", Color3.fromRGB(0, 255, 100))
+    log("Started! Mode: Hit & Run", Color3.fromRGB(0, 255, 100))
     
     task.spawn(function()
         local emptyCount = 0
@@ -365,24 +427,47 @@ local function startAutoFarm()
                 teleportToNPC(currentTarget)
                 task.wait(0.1)
                 
-                local killTimeout = tick() + 15
+                local killTimeout = tick() + 25
                 while currentTarget and currentTarget.humanoid 
                     and currentTarget.humanoid.Health > 0 
                     and isRunning 
                     and tick() < killTimeout do
+                    
+                    -- Cek HP dulu
+                    if isHPLow() then
+                        log("⚠ HP LOW! Retreat...", Color3.fromRGB(255, 100, 100))
+                        retreatFromNPC(currentTarget)
+                        task.wait(3)
+                        
+                        -- Kalo HP masih rendah setelah retreat, tunggu lagi
+                        if isHPLow() then
+                            log("⚠ Masih low, nunggu regen...", Color3.fromRGB(255, 150, 100))
+                            task.wait(3)
+                        end
+                    end
+                    
+                    -- Cek jarak
+                    if currentTarget.root and currentTarget.root.Parent and humanoidRootPart then
+                        local dist = (humanoidRootPart.Position - currentTarget.root.Position).Magnitude
+                        
+                        -- Kalo terlalu jauh, teleport lagi
+                        if dist > CONFIG.ATTACK_RANGE then
+                            teleportToNPC(currentTarget)
+                            task.wait(0.1)
+                        end
+                        
+                        -- Kalo terlalu dekat (kayak nempel), teleport ke jarak aman
+                        if dist < 10 then
+                            teleportToNPC(currentTarget)
+                            task.wait(0.1)
+                        end
+                    end
                     
                     attackNPC(currentTarget)
                     task.wait(CONFIG.ATTACK_COOLDOWN)
                     
                     if not currentTarget.model or not currentTarget.model.Parent then
                         break
-                    end
-                    
-                    if currentTarget.root and currentTarget.root.Parent then
-                        local dist = (humanoidRootPart.Position - currentTarget.root.Position).Magnitude
-                        if dist > CONFIG.ATTACK_RANGE then
-                            teleportToNPC(currentTarget)
-                        end
                     end
                 end
                 
@@ -444,7 +529,7 @@ Title.Size = UDim2.new(1, -60, 1, 0)
 Title.Position = UDim2.new(0, 10, 0, 0)
 Title.BackgroundTransparency = 1
 Title.TextColor3 = Color3.fromRGB(0, 255, 150)
-Title.Text = "🎯 AUTOFARM v4.4"
+Title.Text = "🎯 AUTOFARM v4.5"
 Title.TextSize = 14
 Title.Font = Enum.Font.GothamBold
 Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -483,8 +568,8 @@ WLInfo.Size = UDim2.new(1, -20, 0, 20)
 WLInfo.Position = UDim2.new(0, 10, 0, 42)
 WLInfo.BackgroundTransparency = 1
 WLInfo.TextColor3 = Color3.fromRGB(0, 200, 255)
-WLInfo.Text = "🎯 WHITELIST: 4 NPC"
-WLInfo.TextSize = 11
+WLInfo.Text = "🎯 WHITELIST: 4 NPC | Hit&Run"
+WLInfo.TextSize = 10
 WLInfo.Font = Enum.Font.GothamBold
 WLInfo.TextXAlignment = Enum.TextXAlignment.Left
 WLInfo.Parent = MainFrame
@@ -500,16 +585,16 @@ CountLabel.Font = Enum.Font.Gotham
 CountLabel.TextXAlignment = Enum.TextXAlignment.Left
 CountLabel.Parent = MainFrame
 
-local SkipLabel = Instance.new("TextLabel")
-SkipLabel.Size = UDim2.new(1, -20, 0, 20)
-SkipLabel.Position = UDim2.new(0, 10, 0, 85)
-SkipLabel.BackgroundTransparency = 1
-SkipLabel.TextColor3 = Color3.fromRGB(150, 100, 150)
-SkipLabel.Text = "Skipped: 0"
-SkipLabel.TextSize = 10
-SkipLabel.Font = Enum.Font.Gotham
-SkipLabel.TextXAlignment = Enum.TextXAlignment.Left
-SkipLabel.Parent = MainFrame
+local HPLabel = Instance.new("TextLabel")
+HPLabel.Size = UDim2.new(1, -20, 0, 20)
+HPLabel.Position = UDim2.new(0, 10, 0, 85)
+HPLabel.BackgroundTransparency = 1
+HPLabel.TextColor3 = Color3.fromRGB(150, 255, 150)
+HPLabel.Text = "HP: 100/100 (100%)"
+HPLabel.TextSize = 10
+HPLabel.Font = Enum.Font.Gotham
+HPLabel.TextXAlignment = Enum.TextXAlignment.Left
+HPLabel.Parent = MainFrame
 
 local ToggleButton = Instance.new("TextButton")
 ToggleButton.Size = UDim2.new(1, -20, 0, 45)
@@ -609,7 +694,7 @@ Credit.Size = UDim2.new(1, 0, 0, 15)
 Credit.Position = UDim2.new(0, 0, 1, -15)
 Credit.BackgroundTransparency = 1
 Credit.TextColor3 = Color3.fromRGB(80, 80, 100)
-Credit.Text = "by Kyriel v4.4 - Optimized"
+Credit.Text = "by Kyriel v4.5 - Anti-Death"
 Credit.TextSize = 9
 Credit.Font = Enum.Font.Gotham
 Credit.Parent = MainFrame
@@ -877,7 +962,10 @@ makeDraggable(ListPopup, ListTitle)
 -- SCAN AWAL
 -- ============================================================
 log("==================================================", Color3.fromRGB(0, 200, 255))
-log("  AUTOFARM v4.4 - OPTIMIZED", Color3.fromRGB(0, 200, 255))
+log("  AUTOFARM v4.5 - ANTI-DEATH EDITION", Color3.fromRGB(0, 200, 255))
+log("  Jarak aman: " .. CONFIG.TELEPORT_DISTANCE .. " studs", Color3.fromRGB(0, 200, 255))
+log("  Retreat: " .. CONFIG.RETREAT_DISTANCE .. " studs", Color3.fromRGB(0, 200, 255))
+log("  Min HP: " .. CONFIG.MIN_HP_PERCENT .. "%", Color3.fromRGB(0, 200, 255))
 log("==================================================", Color3.fromRGB(0, 200, 255))
 
 detectedFolders = detectNPCFolders()
@@ -891,16 +979,34 @@ else
 end
 
 -- ============================================================
--- REAL-TIME UPDATE (DIOPTIMASI)
--- Cuma update tiap 10 detik & cuma pas IDLE
+-- REAL-TIME UPDATE
 -- ============================================================
 task.spawn(function()
+    while task.wait(1) do
+        -- Update HP label tiap 1 detik
+        if humanoid and humanoid.Parent then
+            local hpPct = math.floor((humanoid.Health / humanoid.MaxHealth) * 100)
+            HPLabel.Text = string.format("HP: %d/%d (%d%%)", 
+                math.floor(humanoid.Health), 
+                math.floor(humanoid.MaxHealth), 
+                hpPct)
+            
+            if hpPct < CONFIG.MIN_HP_PERCENT then
+                HPLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+            elseif hpPct < 60 then
+                HPLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+            else
+                HPLabel.TextColor3 = Color3.fromRGB(150, 255, 150)
+            end
+        end
+    end
+end)
+
+task.spawn(function()
     while task.wait(CONFIG.SCAN_INTERVAL) do
-        -- Skip kalo lagi running (biar gak double scan)
         if not isRunning then
             local npcs = getAllNPCs()
             CountLabel.Text = "NPC Target: " .. #npcs
-            SkipLabel.Text = "Skipped: " .. skippedCount
         end
     end
 end)
@@ -919,7 +1025,7 @@ ToggleButton.MouseButton1Click:Connect(function()
         startAutoFarm()
         ToggleButton.Text = "⏸ STOP"
         ToggleButton.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
-        StatusLabel.Text = "Status: RUNNING"
+        StatusLabel.Text = "Status: RUNNING (Hit&Run)"
         StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
     end
 end)
@@ -946,10 +1052,14 @@ KillAllBtn.MouseButton1Click:Connect(function()
         for _, npc in ipairs(npcs) do
             if not isRunning then break end
             teleportToNPC(npc)
-            task.wait(0.05)
+            task.wait(0.1)
             
-            local timeout = tick() + 5
+            local timeout = tick() + 8
             while npc.humanoid and npc.humanoid.Health > 0 and tick() < timeout do
+                if isHPLow() then
+                    log("⚠ HP LOW! Skip target", Color3.fromRGB(255, 100, 100))
+                    break
+                end
                 attackNPC(npc)
                 task.wait(0.15)
                 if not npc.model or not npc.model.Parent then break end
