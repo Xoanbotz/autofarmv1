@@ -1,16 +1,15 @@
 --[[
 =========================================================
-  UNIVERSAL AUTOFARM v4.1 - ON-SCREEN CONSOLE
+  UNIVERSAL AUTOFARM v4.2 - FIXED NPC FILTER
   Author: Kyriel (for Boss)
   Executor: Delta / Codex / Wave / Xeno
 =========================================================
 
-FITUR:
-  - Smart NPC detection (multi-layer filter)
-  - Manual folder picker
-  - ON-SCREEN CONSOLE (buat Android, gak perlu F9)
-  - Floating bubble GUI
-  - Anti-quest-giver
+FIX v4.2:
+  - HAPUS filter parent folder "quest" (biar musuh di folder Quest ke-serang)
+  - Ganti pake STRICT BLACKLIST nama NPC
+  - Tambah filter invincible (MaxHealth > 1 miliar)
+  - Console on-screen buat Android
 =========================================================
 ]]
 
@@ -43,7 +42,10 @@ local CONFIG = {
     SKILL_COOLDOWN = 1.5,
     DEBUG = true,
     DETECTION_MODE = "smart",
+    -- Whitelist: cuma serang NPC yang namanya mengandung salah satu kata di sini
+    -- Kosongin {} kalo gak pake
     NPC_WHITELIST = {},
+    -- Blacklist: skip NPC yang namanya mengandung kata di sini
     NPC_BLACKLIST = {},
 }
 
@@ -55,9 +57,9 @@ local skippedCount = 0
 local scanLog = {}
 
 -- ============================================================
--- LOG SYSTEM (KE CONSOLE + GUI)
+-- LOG SYSTEM
 -- ============================================================
-local LogScroll = nil  -- Bakal diisi nanti pas GUI dibikin
+local LogScroll = nil
 
 local function log(msg, color)
     msg = tostring(msg)
@@ -65,7 +67,6 @@ local function log(msg, color)
         print("[Autofarm] " .. msg)
     end
     
-    -- Tampilin di GUI console kalo udah ada
     if LogScroll and LogScroll.Parent then
         local newLabel = Instance.new("TextLabel")
         newLabel.Size = UDim2.new(1, -6, 0, 0)
@@ -79,11 +80,9 @@ local function log(msg, color)
         newLabel.TextWrapped = true
         newLabel.Parent = LogScroll
         
-        -- Auto-scroll ke bawah
         task.wait()
         LogScroll.CanvasPosition = Vector2.new(0, LogScroll.AbsoluteCanvasSize.Y)
         
-        -- Limit 100 log
         local count = 0
         for _, child in ipairs(LogScroll:GetChildren()) do
             if child:IsA("TextLabel") then count = count + 1 end
@@ -100,18 +99,24 @@ local function log(msg, color)
 end
 
 -- ============================================================
--- BLACKLIST KEYWORDS
+-- STRICT BLACKLIST NAMA NPC (cuma yang spesifik)
 -- ============================================================
-local BLACKLIST_KEYWORDS = {
-    "quest", "vendor", "shop", "merchant", "trader",
-    "dialog", "interact", "friendly", "ally", "civilian",
-    "npc_quest", "npcquest", "questgiver", "quest_giver",
-    "shopkeeper", "blacksmith", "innkeeper", "healer",
-    "trainer", "banker", "auctioneer", "guard"
+local STRICT_BLACKLIST = {
+    "quest_giver", "questgiver", "quest-giver",
+    "npc_quest", "npcquest",
+    "shopkeeper", "shop_keeper",
+    "blacksmith", "inn_keeper", "innkeeper",
+    "auctioneer", "banker",
+    "vendor_", "_vendor", "vendornpc",
+    "healer_npc",
+    "trainer_npc",
+    "_guard_", "guard_npc",
+    "friendly_npc",
+    "dialog_npc",
 }
 
 -- ============================================================
--- SMART FILTER NPC
+-- SMART FILTER NPC (FIXED)
 -- ============================================================
 local function checkNPC(model)
     if not model or not model:IsA("Model") then
@@ -131,20 +136,21 @@ local function checkNPC(model)
         return false, "dead"
     end
     
+    -- FILTER 1: MaxHealth harus > 0 dan terbatas
     if hum.MaxHealth <= 0 then
-        return false, "no health (quest giver)"
+        return false, "MaxHealth=0"
+    end
+    if hum.MaxHealth == math.huge or hum.MaxHealth > 1e9 then
+        return false, "invincible (MaxHealth>1B)"
     end
     
-    if hum.MaxHealth == math.huge then
-        return false, "invincible"
-    end
-    
+    -- FILTER 2: Atribut
     for _, attr in ipairs({"Invincible", "IsQuestGiver", "IsFriendly", "IsPassive", "NoDamage"}) do
         if hum:GetAttribute(attr) == true then
-            return false, "attribute " .. attr
+            return false, "attr " .. attr
         end
         if model:GetAttribute(attr) == true then
-            return false, "attribute " .. attr
+            return false, "attr " .. attr
         end
     end
     
@@ -155,55 +161,34 @@ local function checkNPC(model)
         return false, "Damageable=false"
     end
     
+    -- FILTER 3: STRICT BLACKLIST (nama NPC)
     local nameLower = string.lower(model.Name)
-    for _, keyword in ipairs(BLACKLIST_KEYWORDS) do
+    for _, keyword in ipairs(STRICT_BLACKLIST) do
         if string.find(nameLower, keyword) then
-            return false, "name contains '" .. keyword .. "'"
-        end
-    end
-    for _, keyword in ipairs(CONFIG.NPC_BLACKLIST) do
-        if string.find(nameLower, string.lower(keyword)) then
             return false, "blacklist: " .. keyword
         end
     end
     
-    if model.Parent then
-        local parentLower = string.lower(model.Parent.Name)
-        for _, keyword in ipairs({"quest", "vendor", "shop", "friendly", "passive", "civilian"}) do
-            if string.find(parentLower, keyword) then
-                return false, "parent contains '" .. keyword .. "'"
-            end
+    -- FILTER 4: User blacklist
+    for _, keyword in ipairs(CONFIG.NPC_BLACKLIST) do
+        if string.find(nameLower, string.lower(keyword)) then
+            return false, "user blacklist: " .. keyword
         end
     end
     
+    -- FILTER 5: Tag CollectionService (cuma tag spesifik)
     local tags = CollectionService:GetTags(model)
     for _, tag in ipairs(tags) do
         local tagLower = string.lower(tag)
-        for _, keyword in ipairs({"quest", "friendly", "passive", "vendor", "invincible"}) do
-            if string.find(tagLower, keyword) then
-                return false, "tag: " .. tag
-            end
+        if string.find(tagLower, "friendly") 
+            or string.find(tagLower, "invincible")
+            or string.find(tagLower, "passive")
+            or string.find(tagLower, "questgiver") then
+            return false, "tag: " .. tag
         end
     end
     
-    local hasHealthBar = false
-    for _, desc in ipairs(model:GetDescendants()) do
-        if desc:IsA("BillboardGui") then
-            for _, sub in ipairs(desc:GetDescendants()) do
-                if sub:IsA("TextLabel") or sub:IsA("Frame") then
-                    if string.find(string.lower(sub.Name), "health") 
-                        or string.find(string.lower(sub.Name), "hp") then
-                        hasHealthBar = true
-                        break
-                    end
-                end
-            end
-        end
-        if hasHealthBar then break end
-    end
-    
-    local walkSpeed = hum.WalkSpeed
-    
+    -- FILTER 6: Harus punya root part
     local root = model:FindFirstChild("HumanoidRootPart") 
         or model:FindFirstChild("Head") 
         or model:FindFirstChild("Torso")
@@ -213,7 +198,22 @@ local function checkNPC(model)
         return false, "no root part"
     end
     
-    return true, "OK (HP:" .. math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth) .. ", WS:" .. walkSpeed .. ", HPBar:" .. tostring(hasHealthBar) .. ")"
+    -- FILTER 7: Whitelist mode (kalo diaktifin)
+    if CONFIG.DETECTION_MODE == "whitelist" and #CONFIG.NPC_WHITELIST > 0 then
+        local matched = false
+        for _, keyword in ipairs(CONFIG.NPC_WHITELIST) do
+            if string.find(nameLower, string.lower(keyword)) then
+                matched = true
+                break
+            end
+        end
+        if not matched then
+            return false, "not in whitelist"
+        end
+    end
+    
+    -- LULUS
+    return true, string.format("OK (HP:%d/%d)", math.floor(hum.Health), math.floor(hum.MaxHealth))
 end
 
 local function isNPC(model)
@@ -226,7 +226,6 @@ end
 -- ============================================================
 local function detectNPCFolders()
     local folderCount = {}
-    local folderDetail = {}
     skippedCount = 0
     scanLog = {}
     
@@ -503,7 +502,7 @@ Title.Size = UDim2.new(1, -60, 1, 0)
 Title.Position = UDim2.new(0, 10, 0, 0)
 Title.BackgroundTransparency = 1
 Title.TextColor3 = Color3.fromRGB(0, 255, 150)
-Title.Text = "🎯 AUTOFARM v4.1"
+Title.Text = "🎯 AUTOFARM v4.2"
 Title.TextSize = 14
 Title.Font = Enum.Font.GothamBold
 Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -692,7 +691,7 @@ Credit.Size = UDim2.new(1, 0, 0, 15)
 Credit.Position = UDim2.new(0, 0, 1, -15)
 Credit.BackgroundTransparency = 1
 Credit.TextColor3 = Color3.fromRGB(80, 80, 100)
-Credit.Text = "by Kyriel"
+Credit.Text = "by Kyriel v4.2"
 Credit.TextSize = 9
 Credit.Font = Enum.Font.Gotham
 Credit.Parent = MainFrame
@@ -738,7 +737,6 @@ ConsoleTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 ConsoleTitleLabel.ZIndex = 22
 ConsoleTitleLabel.Parent = ConsoleTitle
 
--- Clear Button
 local ClearBtn = Instance.new("TextButton")
 ClearBtn.Size = UDim2.new(0, 50, 0, 22)
 ClearBtn.Position = UDim2.new(1, -85, 0, 4)
@@ -754,7 +752,6 @@ local ClearCorner = Instance.new("UICorner")
 ClearCorner.CornerRadius = UDim.new(0, 4)
 ClearCorner.Parent = ClearBtn
 
--- Close Button
 local ConsoleClose = Instance.new("TextButton")
 ConsoleClose.Size = UDim2.new(0, 25, 0, 22)
 ConsoleClose.Position = UDim2.new(1, -28, 0, 4)
@@ -770,7 +767,6 @@ local ConsoleCloseCorner = Instance.new("UICorner")
 ConsoleCloseCorner.CornerRadius = UDim.new(0, 4)
 ConsoleCloseCorner.Parent = ConsoleClose
 
--- Log Scroll
 LogScroll = Instance.new("ScrollingFrame")
 LogScroll.Size = UDim2.new(1, -10, 1, -40)
 LogScroll.Position = UDim2.new(0, 5, 0, 35)
@@ -854,10 +850,10 @@ makeDraggable(Bubble, Bubble)
 makeDraggable(ConsolePopup, ConsoleTitle)
 
 -- ============================================================
--- SCAN AWAL (SEKARANG BISA MUNCUL DI GUI CONSOLE)
+-- SCAN AWAL
 -- ============================================================
 log("==================================================", Color3.fromRGB(0, 200, 255))
-log("     AUTOFARM v4.1 - SMART NPC DETECTION", Color3.fromRGB(0, 200, 255))
+log("     AUTOFARM v4.2 - FIXED NPC FILTER", Color3.fromRGB(0, 200, 255))
 log("==================================================", Color3.fromRGB(0, 200, 255))
 
 detectedFolders = detectNPCFolders()
@@ -872,7 +868,6 @@ if #detectedFolders > 0 then
     log("Total skipped: " .. skippedCount, Color3.fromRGB(200, 150, 200))
 else
     log("WARNING: Gak ada NPC musuh terdeteksi!", Color3.fromRGB(255, 100, 100))
-    log("Tips: Coba mode 'folder' atau cek Skip Log di atas.", Color3.fromRGB(255, 200, 100))
 end
 
 log("==================================================", Color3.fromRGB(0, 200, 255))
@@ -882,7 +877,6 @@ log("==================================================", Color3.fromRGB(0, 200,
 -- ============================================================
 task.spawn(function()
     while task.wait(2) do
-        skippedCount = 0
         local npcs = getAllNPCs()
         CountLabel.Text = "NPC Target: " .. #npcs
         SkipLabel.Text = "Skipped: " .. skippedCount
@@ -1067,5 +1061,5 @@ end)
 -- DONE
 -- ============================================================
 log("✅ Script loaded!", Color3.fromRGB(0, 255, 100))
-log("💡 Klik '📋 OPEN CONSOLE' buat liat log", Color3.fromRGB(200, 200, 100))
 log("💡 Kalo NPC salah target, cek Skip Log", Color3.fromRGB(200, 200, 100))
+log("💡 Pake WHITELIST kalo mau cuma serang NPC tertentu", Color3.fromRGB(200, 200, 100))
