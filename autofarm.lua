@@ -1,17 +1,15 @@
 --[[
 =========================================================
-  UNIVERSAL AUTOFARM v4.3 - WHITELIST MODE
+  UNIVERSAL AUTOFARM v4.4 - OPTIMIZED
   Author: Kyriel (for Boss)
   Executor: Delta / Codex / Wave / Xeno
-=========================================================
 
-WHITELIST: Cuma serang NPC ini:
-  - Scorpion
-  - Tombguardian
-  - Water Serpent
-  - Tidecrusher Crab
-
-Selain itu SKIP TOTAL.
+OPTIMIZATION:
+  - Scan interval 2s → 10s
+  - Log cuma pas console kebuka
+  - Depth recursive 6 → 4
+  - Skill spam dikurangin
+  - Memory leak fix
 =========================================================
 ]]
 
@@ -19,7 +17,6 @@ Selain itu SKIP TOTAL.
 -- SERVICE
 -- ============================================================
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local VirtualUser = game:GetService("VirtualUser")
 local CollectionService = game:GetService("CollectionService")
@@ -33,30 +30,28 @@ local humanoid = character:WaitForChild("Humanoid")
 -- KONFIGURASI
 -- ============================================================
 local CONFIG = {
-    NPC_FOLDER_NAME = nil,
     ATTACK_RANGE = 100,
     TELEPORT_HEIGHT = 3,
-    ATTACK_COOLDOWN = 0.15,
-    LOOP_DELAY = 0.3,
+    ATTACK_COOLDOWN = 0.2,       -- Dinaikin dikit biar gak overload
+    LOOP_DELAY = 0.5,
     AUTO_EQUIP_TOOL = true,
     USE_SKILLS = true,
     SKILL_KEYS = {"Z", "X", "C", "V", "F"},
-    SKILL_COOLDOWN = 1.5,
+    SKILL_COOLDOWN = 2,
     DEBUG = true,
-    -- WAJIB "whitelist" biar cuma serang 4 NPC itu
     DETECTION_MODE = "whitelist",
-    -- WHITELIST: cuma serang NPC yang namanya ADA SALAH SATU kata ini
     NPC_WHITELIST = {
         "Scorpion",
         "Tombguardian",
-        "TombGuardian",
         "Water Serpent",
-        "WaterSerpent",
         "Tidecrusher Crab",
+        "WaterSerpent",
         "TidecrusherCrab",
-        "Tidecrusher",
     },
     NPC_BLACKLIST = {},
+    MAX_DEPTH = 4,              -- Turun dari 6
+    LOG_LIMIT = 30,             -- Turun dari 100
+    SCAN_INTERVAL = 10,         -- Real-time update interval
 }
 
 local isRunning = false
@@ -65,51 +60,59 @@ local lastSkillTime = 0
 local detectedFolders = {}
 local skippedCount = 0
 local scanLog = {}
+local logCount = 0
 
 -- ============================================================
--- LOG SYSTEM
+-- LOG SYSTEM (OPTIMIZED)
 -- ============================================================
 local LogScroll = nil
+local ConsolePopup = nil
 
 local function log(msg, color)
-    msg = tostring(msg)
     if CONFIG.DEBUG then
-        print("[Autofarm] " .. msg)
+        print("[Autofarm] " .. tostring(msg))
     end
     
-    if LogScroll and LogScroll.Parent then
-        local newLabel = Instance.new("TextLabel")
-        newLabel.Size = UDim2.new(1, -6, 0, 0)
-        newLabel.AutomaticSize = Enum.AutomaticSize.Y
-        newLabel.BackgroundTransparency = 1
-        newLabel.TextColor3 = color or Color3.fromRGB(150, 255, 150)
-        newLabel.Text = "> " .. msg
-        newLabel.TextSize = 10
-        newLabel.Font = Enum.Font.Code
-        newLabel.TextXAlignment = Enum.TextXAlignment.Left
-        newLabel.TextWrapped = true
-        newLabel.Parent = LogScroll
-        
-        task.wait()
-        LogScroll.CanvasPosition = Vector2.new(0, LogScroll.AbsoluteCanvasSize.Y)
-        
-        local count = 0
+    -- Skip kalo console gak kebuka (PENGHEMATAN BESAR)
+    if not LogScroll or not LogScroll.Parent or not ConsolePopup or not ConsolePopup.Visible then
+        return
+    end
+    
+    local newLabel = Instance.new("TextLabel")
+    newLabel.Size = UDim2.new(1, -6, 0, 0)
+    newLabel.AutomaticSize = Enum.AutomaticSize.Y
+    newLabel.BackgroundTransparency = 1
+    newLabel.TextColor3 = color or Color3.fromRGB(150, 255, 150)
+    newLabel.Text = "> " .. tostring(msg)
+    newLabel.TextSize = 10
+    newLabel.Font = Enum.Font.Code
+    newLabel.TextXAlignment = Enum.TextXAlignment.Left
+    newLabel.TextWrapped = true
+    newLabel.Parent = LogScroll
+    
+    logCount = logCount + 1
+    
+    -- Auto-scroll tanpa task.wait()
+    LogScroll.CanvasPosition = Vector2.new(0, LogScroll.AbsoluteCanvasSize.Y)
+    
+    -- Limit log
+    if logCount > CONFIG.LOG_LIMIT then
+        local first = nil
         for _, child in ipairs(LogScroll:GetChildren()) do
-            if child:IsA("TextLabel") then count = count + 1 end
-        end
-        if count > 100 then
-            for _, child in ipairs(LogScroll:GetChildren()) do
-                if child:IsA("TextLabel") then
-                    child:Destroy()
-                    break
-                end
+            if child:IsA("TextLabel") then
+                first = child
+                break
             end
+        end
+        if first then
+            first:Destroy()
+            logCount = logCount - 1
         end
     end
 end
 
 -- ============================================================
--- SMART FILTER NPC - WHITELIST MODE
+-- CHECK NPC
 -- ============================================================
 local function checkNPC(model)
     if not model or not model:IsA("Model") then
@@ -129,7 +132,6 @@ local function checkNPC(model)
         return false, "dead"
     end
     
-    -- FILTER MaxHealth
     if hum.MaxHealth <= 0 then
         return false, "MaxHealth=0"
     end
@@ -137,22 +139,13 @@ local function checkNPC(model)
         return false, "invincible"
     end
     
-    -- FILTER ATRIBUT
-    for _, attr in ipairs({"Invincible", "IsQuestGiver", "IsFriendly", "IsPassive", "NoDamage"}) do
-        if hum:GetAttribute(attr) == true then
-            return false, "attr " .. attr
-        end
-        if model:GetAttribute(attr) == true then
-            return false, "attr " .. attr
-        end
-    end
+    -- Cek atribut (cuma 3 yang penting biar cepet)
+    if hum:GetAttribute("Invincible") == true then return false, "invincible" end
+    if hum:GetAttribute("IsQuestGiver") == true then return false, "questgiver" end
+    if model:GetAttribute("Invincible") == true then return false, "invincible" end
     
-    -- ========================================
-    -- WHITELIST CHECK (INI YANG PALING PENTING)
-    -- ========================================
-    local modelName = model.Name
-    local nameLower = string.lower(modelName)
-    
+    -- Whitelist check
+    local nameLower = string.lower(model.Name)
     local isWhitelisted = false
     local matchedName = ""
     
@@ -168,27 +161,23 @@ local function checkNPC(model)
         return false, "not in whitelist"
     end
     
-    -- FILTER ROOT PART
-    local root = model:FindFirstChild("HumanoidRootPart") 
-        or model:FindFirstChild("Head") 
-        or model:FindFirstChild("Torso")
-        or model:FindFirstChild("UpperTorso")
-    
+    -- Root part check
+    local root = model:FindFirstChild("HumanoidRootPart")
     if not root then
-        return false, "no root part"
+        root = model:FindFirstChild("Head") 
+            or model:FindFirstChild("Torso")
+            or model:FindFirstChild("UpperTorso")
     end
     
-    -- LULUS
-    return true, string.format("✅ %s (HP:%d)", matchedName, math.floor(hum.Health))
-end
-
-local function isNPC(model)
-    local result, reason = checkNPC(model)
-    return result
+    if not root then
+        return false, "no root"
+    end
+    
+    return true, matchedName
 end
 
 -- ============================================================
--- DETEKSI FOLDER NPC
+-- DETEKSI FOLDER
 -- ============================================================
 local function detectNPCFolders()
     local folderCount = {}
@@ -196,8 +185,7 @@ local function detectNPCFolders()
     scanLog = {}
     
     local function scan(instance, depth)
-        depth = depth or 0
-        if depth > 6 then return end
+        if depth > CONFIG.MAX_DEPTH then return end
         
         for _, obj in ipairs(instance:GetChildren()) do
             if obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") then
@@ -207,7 +195,7 @@ local function detectNPCFolders()
                     folderCount[parentName] = (folderCount[parentName] or 0) + 1
                 else
                     skippedCount = skippedCount + 1
-                    if #scanLog < 30 then
+                    if #scanLog < 20 and reason ~= "not in whitelist" then
                         table.insert(scanLog, string.format("SKIP %s → %s", obj.Name, reason))
                     end
                 end
@@ -224,11 +212,10 @@ local function detectNPCFolders()
     scan(workspace, 0)
     
     if #scanLog > 0 then
-        log("--- Skip Log (max 30) ---", Color3.fromRGB(255, 200, 100))
+        log("--- Skip Log ---", Color3.fromRGB(255, 200, 100))
         for _, entry in ipairs(scanLog) do
             log(entry, Color3.fromRGB(255, 150, 150))
         end
-        log("--- End Skip Log ---", Color3.fromRGB(255, 200, 100))
     end
     
     local sorted = {}
@@ -247,39 +234,35 @@ local function getAllNPCs()
     local npcs = {}
     
     local function scan(instance, depth)
-        depth = depth or 0
-        if depth > 6 then return end
+        if depth > CONFIG.MAX_DEPTH then return end
         
         for _, obj in ipairs(instance:GetChildren()) do
-            local ok = checkNPC(obj)
-            if ok then
-                local hum = obj:FindFirstChildOfClass("Humanoid")
-                local root = obj:FindFirstChild("HumanoidRootPart") 
-                    or obj:FindFirstChild("Head") 
-                    or obj:FindFirstChild("Torso")
-                    or obj:FindFirstChild("UpperTorso")
-                
-                if hum and root and hum.Health > 0 then
-                    local dist = (humanoidRootPart.Position - root.Position).Magnitude
-                    table.insert(npcs, {
-                        model = obj,
-                        humanoid = hum,
-                        root = root,
-                        distance = dist
-                    })
+            if obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") then
+                local ok = checkNPC(obj)
+                if ok then
+                    local hum = obj:FindFirstChildOfClass("Humanoid")
+                    local root = obj:FindFirstChild("HumanoidRootPart") 
+                        or obj:FindFirstChild("Head") 
+                        or obj:FindFirstChild("Torso")
+                        or obj:FindFirstChild("UpperTorso")
+                    
+                    if hum and root and hum.Health > 0 then
+                        local dist = (humanoidRootPart.Position - root.Position).Magnitude
+                        table.insert(npcs, {
+                            model = obj,
+                            humanoid = hum,
+                            root = root,
+                            distance = dist
+                        })
+                    end
                 end
-            end
-            
-            if obj:IsA("Folder") or obj:IsA("Model") then
-                if #obj:GetChildren() > 0 and not obj:FindFirstChildOfClass("Humanoid") then
-                    scan(obj, depth + 1)
-                end
+            elseif obj:IsA("Folder") or (obj:IsA("Model") and #obj:GetChildren() > 0) then
+                scan(obj, depth + 1)
             end
         end
     end
     
     scan(workspace, 0)
-    
     table.sort(npcs, function(a, b) return a.distance < b.distance end)
     return npcs
 end
@@ -309,7 +292,7 @@ local function teleportToNPC(npc)
 end
 
 -- ============================================================
--- SERANG
+-- SERANG (OPTIMIZED SKILL)
 -- ============================================================
 local function attackNPC(npc)
     if not npc or not npc.model or not npc.model.Parent then return end
@@ -321,24 +304,25 @@ local function attackNPC(npc)
             for _, item in ipairs(player.Backpack:GetChildren()) do
                 if item:IsA("Tool") then
                     item.Parent = character
-                    task.wait(0.05)
                     break
                 end
             end
         end
     end
     
+    -- Aktifkan tool 1x aja (bukan spam)
     local tool = character:FindFirstChildOfClass("Tool")
     if tool then
         pcall(function() tool:Activate() end)
     end
     
+    -- Klik mouse 1x
     pcall(function()
         VirtualUser:Button1Down(Vector2.new(0, 0))
-        task.wait(0.03)
         VirtualUser:Button1Up(Vector2.new(0, 0))
     end)
     
+    -- Skill cuma 1x per cycle (bukan 5x spam)
     if CONFIG.USE_SKILLS and tick() - lastSkillTime > CONFIG.SKILL_COOLDOWN then
         for _, key in ipairs(CONFIG.SKILL_KEYS) do
             pcall(function()
@@ -357,7 +341,7 @@ end
 local function startAutoFarm()
     if isRunning then return end
     isRunning = true
-    log("Started! Cari: Scorpion, Tombguardian, Water Serpent, Tidecrusher Crab", Color3.fromRGB(0, 255, 100))
+    log("Started!", Color3.fromRGB(0, 255, 100))
     
     task.spawn(function()
         local emptyCount = 0
@@ -405,10 +389,10 @@ local function startAutoFarm()
                 log("✓ Killed: " .. targetName, Color3.fromRGB(100, 255, 100))
             else
                 emptyCount = emptyCount + 1
-                if emptyCount % 5 == 0 then
-                    log("Gak ada NPC target. Nunggu...", Color3.fromRGB(255, 200, 100))
+                if emptyCount % 10 == 0 then
+                    log("Nunggu NPC...", Color3.fromRGB(255, 200, 100))
                 end
-                task.wait(1)
+                task.wait(2)
             end
             
             task.wait(CONFIG.LOOP_DELAY)
@@ -460,7 +444,7 @@ Title.Size = UDim2.new(1, -60, 1, 0)
 Title.Position = UDim2.new(0, 10, 0, 0)
 Title.BackgroundTransparency = 1
 Title.TextColor3 = Color3.fromRGB(0, 255, 150)
-Title.Text = "🎯 AUTOFARM v4.3"
+Title.Text = "🎯 AUTOFARM v4.4"
 Title.TextSize = 14
 Title.Font = Enum.Font.GothamBold
 Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -494,7 +478,6 @@ local CloseCorner = Instance.new("UICorner")
 CloseCorner.CornerRadius = UDim.new(0, 5)
 CloseCorner.Parent = CloseBtn
 
--- Whitelist Info
 local WLInfo = Instance.new("TextLabel")
 WLInfo.Size = UDim2.new(1, -20, 0, 20)
 WLInfo.Position = UDim2.new(0, 10, 0, 42)
@@ -506,7 +489,6 @@ WLInfo.Font = Enum.Font.GothamBold
 WLInfo.TextXAlignment = Enum.TextXAlignment.Left
 WLInfo.Parent = MainFrame
 
--- NPC Count
 local CountLabel = Instance.new("TextLabel")
 CountLabel.Size = UDim2.new(1, -20, 0, 20)
 CountLabel.Position = UDim2.new(0, 10, 0, 65)
@@ -518,7 +500,6 @@ CountLabel.Font = Enum.Font.Gotham
 CountLabel.TextXAlignment = Enum.TextXAlignment.Left
 CountLabel.Parent = MainFrame
 
--- Skipped Count
 local SkipLabel = Instance.new("TextLabel")
 SkipLabel.Size = UDim2.new(1, -20, 0, 20)
 SkipLabel.Position = UDim2.new(0, 10, 0, 85)
@@ -530,7 +511,6 @@ SkipLabel.Font = Enum.Font.Gotham
 SkipLabel.TextXAlignment = Enum.TextXAlignment.Left
 SkipLabel.Parent = MainFrame
 
--- Start Button
 local ToggleButton = Instance.new("TextButton")
 ToggleButton.Size = UDim2.new(1, -20, 0, 45)
 ToggleButton.Position = UDim2.new(0, 10, 0, 110)
@@ -545,7 +525,6 @@ local BtnCorner = Instance.new("UICorner")
 BtnCorner.CornerRadius = UDim.new(0, 8)
 BtnCorner.Parent = ToggleButton
 
--- Status Label
 local StatusLabel = Instance.new("TextLabel")
 StatusLabel.Size = UDim2.new(1, -20, 0, 20)
 StatusLabel.Position = UDim2.new(0, 10, 0, 160)
@@ -557,7 +536,6 @@ StatusLabel.Font = Enum.Font.Gotham
 StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 StatusLabel.Parent = MainFrame
 
--- Info NPC List
 local NPCListLabel = Instance.new("TextLabel")
 NPCListLabel.Size = UDim2.new(1, -20, 0, 15)
 NPCListLabel.Position = UDim2.new(0, 10, 0, 185)
@@ -570,7 +548,6 @@ NPCListLabel.TextXAlignment = Enum.TextXAlignment.Left
 NPCListLabel.TextWrapped = true
 NPCListLabel.Parent = MainFrame
 
--- Rescan Button
 local RescanBtn = Instance.new("TextButton")
 RescanBtn.Size = UDim2.new(1, -20, 0, 30)
 RescanBtn.Position = UDim2.new(0, 10, 0, 205)
@@ -585,7 +562,6 @@ local RescanCorner = Instance.new("UICorner")
 RescanCorner.CornerRadius = UDim.new(0, 6)
 RescanCorner.Parent = RescanBtn
 
--- Kill All Button
 local KillAllBtn = Instance.new("TextButton")
 KillAllBtn.Size = UDim2.new(1, -20, 0, 30)
 KillAllBtn.Position = UDim2.new(0, 10, 0, 240)
@@ -600,7 +576,6 @@ local KillCorner = Instance.new("UICorner")
 KillCorner.CornerRadius = UDim.new(0, 6)
 KillCorner.Parent = KillAllBtn
 
--- Show List Button
 local ListBtn = Instance.new("TextButton")
 ListBtn.Size = UDim2.new(1, -20, 0, 30)
 ListBtn.Position = UDim2.new(0, 10, 0, 275)
@@ -615,7 +590,6 @@ local ListCorner = Instance.new("UICorner")
 ListCorner.CornerRadius = UDim.new(0, 6)
 ListCorner.Parent = ListBtn
 
--- Console Button
 local ConsoleBtn = Instance.new("TextButton")
 ConsoleBtn.Size = UDim2.new(1, -20, 0, 30)
 ConsoleBtn.Position = UDim2.new(0, 10, 0, 310)
@@ -630,13 +604,12 @@ local ConsoleCorner = Instance.new("UICorner")
 ConsoleCorner.CornerRadius = UDim.new(0, 6)
 ConsoleCorner.Parent = ConsoleBtn
 
--- Credit
 local Credit = Instance.new("TextLabel")
 Credit.Size = UDim2.new(1, 0, 0, 15)
 Credit.Position = UDim2.new(0, 0, 1, -15)
 Credit.BackgroundTransparency = 1
 Credit.TextColor3 = Color3.fromRGB(80, 80, 100)
-Credit.Text = "by Kyriel v4.3 - Whitelist Mode"
+Credit.Text = "by Kyriel v4.4 - Optimized"
 Credit.TextSize = 9
 Credit.Font = Enum.Font.Gotham
 Credit.Parent = MainFrame
@@ -644,7 +617,7 @@ Credit.Parent = MainFrame
 -- ============================================================
 -- CONSOLE POPUP
 -- ============================================================
-local ConsolePopup = Instance.new("Frame")
+ConsolePopup = Instance.new("Frame")
 ConsolePopup.Size = UDim2.new(0, 340, 0, 300)
 ConsolePopup.Position = UDim2.new(0.5, -170, 0.5, -150)
 ConsolePopup.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
@@ -822,7 +795,7 @@ local function refreshNPCList()
         lbl.Size = UDim2.new(1, -6, 0, 20)
         lbl.BackgroundTransparency = 1
         lbl.TextColor3 = Color3.fromRGB(150, 255, 150)
-        lbl.Text = string.format("%d. %s (HP: %d) [%.0f studs]", 
+        lbl.Text = string.format("%d. %s (HP: %d) [%.0f]", 
             i, npc.model.Name, math.floor(npc.humanoid.Health), npc.distance)
         lbl.TextSize = 11
         lbl.Font = Enum.Font.Code
@@ -904,35 +877,31 @@ makeDraggable(ListPopup, ListTitle)
 -- SCAN AWAL
 -- ============================================================
 log("==================================================", Color3.fromRGB(0, 200, 255))
-log("  AUTOFARM v4.3 - WHITELIST MODE", Color3.fromRGB(0, 200, 255))
-log("  Target: Scorpion, Tombguardian,", Color3.fromRGB(0, 200, 255))
-log("          Water Serpent, Tidecrusher Crab", Color3.fromRGB(0, 200, 255))
+log("  AUTOFARM v4.4 - OPTIMIZED", Color3.fromRGB(0, 200, 255))
 log("==================================================", Color3.fromRGB(0, 200, 255))
 
 detectedFolders = detectNPCFolders()
 
 if #detectedFolders > 0 then
-    log("NPC target ketemu di folder:", Color3.fromRGB(150, 255, 150))
     for i, folder in ipairs(detectedFolders) do
-        log(string.format("   [%d] %s -> %d NPC", i, folder.name, folder.count), Color3.fromRGB(200, 200, 100))
+        log(string.format("[%d] %s -> %d NPC", i, folder.name, folder.count), Color3.fromRGB(200, 200, 100))
     end
-    CONFIG.NPC_FOLDER_NAME = detectedFolders[1].name
-    log("Total skipped: " .. skippedCount, Color3.fromRGB(200, 150, 200))
 else
     log("WARNING: Gak ada NPC target terdeteksi!", Color3.fromRGB(255, 100, 100))
-    log("Coba pake RESCAN atau pastikan nama NPC-nya bener.", Color3.fromRGB(255, 200, 100))
 end
 
-log("==================================================", Color3.fromRGB(0, 200, 255))
-
 -- ============================================================
--- REAL-TIME UPDATE
+-- REAL-TIME UPDATE (DIOPTIMASI)
+-- Cuma update tiap 10 detik & cuma pas IDLE
 -- ============================================================
 task.spawn(function()
-    while task.wait(2) do
-        local npcs = getAllNPCs()
-        CountLabel.Text = "NPC Target: " .. #npcs
-        SkipLabel.Text = "Skipped: " .. skippedCount
+    while task.wait(CONFIG.SCAN_INTERVAL) do
+        -- Skip kalo lagi running (biar gak double scan)
+        if not isRunning then
+            local npcs = getAllNPCs()
+            CountLabel.Text = "NPC Target: " .. #npcs
+            SkipLabel.Text = "Skipped: " .. skippedCount
+        end
     end
 end)
 
@@ -962,15 +931,14 @@ RescanBtn.MouseButton1Click:Connect(function()
     detectedFolders = detectNPCFolders()
     
     if #detectedFolders > 0 then
-        CONFIG.NPC_FOLDER_NAME = detectedFolders[1].name
-        log("Rescan done. Total skipped: " .. skippedCount, Color3.fromRGB(0, 255, 100))
+        log("Rescan done.", Color3.fromRGB(0, 255, 100))
     end
     
     RescanBtn.Text = "🔄 RESCAN"
 end)
 
 KillAllBtn.MouseButton1Click:Connect(function()
-    log("Kill all target mode...", Color3.fromRGB(255, 150, 100))
+    log("Kill all mode...", Color3.fromRGB(255, 150, 100))
     KillAllBtn.Text = "⚔ KILLING..."
     
     task.spawn(function()
@@ -983,7 +951,7 @@ KillAllBtn.MouseButton1Click:Connect(function()
             local timeout = tick() + 5
             while npc.humanoid and npc.humanoid.Health > 0 and tick() < timeout do
                 attackNPC(npc)
-                task.wait(0.1)
+                task.wait(0.15)
                 if not npc.model or not npc.model.Parent then break end
             end
         end
@@ -1012,6 +980,7 @@ ClearBtn.MouseButton1Click:Connect(function()
             child:Destroy()
         end
     end
+    logCount = 0
 end)
 
 ConsoleClose.MouseButton1Click:Connect(function()
@@ -1054,5 +1023,3 @@ end)
 -- DONE
 -- ============================================================
 log("✅ Script loaded!", Color3.fromRGB(0, 255, 100))
-log("💡 Cuma serang: Scorpion, Tombguardian, Water Serpent, Tidecrusher Crab", Color3.fromRGB(200, 200, 100))
-log("💡 Klik '📋 LIHAT NPC TARGET' buat liat NPC yang ke-detect", Color3.fromRGB(200, 200, 100))
