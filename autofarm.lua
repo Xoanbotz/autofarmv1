@@ -1,14 +1,15 @@
 --[[
 =========================================================
-  UNIVERSAL AUTOFARM v4.6 - TOP ATTACK EDITION
+  UNIVERSAL AUTOFARM v4.7 - LOCK MODE
   Author: Kyriel (for Boss)
   Executor: Delta / Codex / Wave / Xeno
 
 FITUR:
-  - Teleport DI ATAS KEPALA NPC
-  - Hapus auto-retreat
-  - Tombol TELEPORT KE MOB (pilih dari list)
-  - Whitelist 4 NPC
+  - Karakter DIKUNCI di atas kepala mob
+  - Anti-gravity (gak bisa jatuh)
+  - Update posisi tiap 50ms (mob gerak, lo ikut)
+  - Auto-attack jalan terus
+  - Tombol TELEPORT KE MOB
 =========================================================
 ]]
 
@@ -18,6 +19,7 @@ FITUR:
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local VirtualUser = game:GetService("VirtualUser")
+local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -25,12 +27,21 @@ local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
 local humanoid = character:WaitForChild("Humanoid")
 
 -- ============================================================
+-- ANTI-GRAVITY (BIAR GAK JATUH)
+-- ============================================================
+local originalGravity = workspace.Gravity
+pcall(function()
+    workspace.Gravity = 0
+end)
+
+-- ============================================================
 -- KONFIGURASI
 -- ============================================================
 local CONFIG = {
     ATTACK_RANGE = 100,
-    TELEPORT_HEIGHT = 10,         -- Ketinggian DI ATAS kepala NPC
-    ATTACK_COOLDOWN = 0.2,
+    TELEPORT_HEIGHT = 8,          -- Ketinggian DI ATAS kepala NPC
+    LOCK_UPDATE_RATE = 0.05,      -- Update posisi tiap 50ms
+    ATTACK_COOLDOWN = 0.15,
     LOOP_DELAY = 0.5,
     AUTO_EQUIP_TOOL = true,
     USE_SKILLS = true,
@@ -58,6 +69,7 @@ local detectedFolders = {}
 local skippedCount = 0
 local scanLog = {}
 local logCount = 0
+local lockConnection = nil
 
 -- ============================================================
 -- LOG SYSTEM
@@ -258,24 +270,18 @@ local function getAllNPCs()
 end
 
 -- ============================================================
--- TELEPORT DI ATAS KEPALA NPC
+-- LOCK POSISI KE ATAS KEPALA NPC
 -- ============================================================
-local function teleportToNPC(npc)
-    if not npc or not npc.root or not npc.root.Parent then return false end
+local function lockToNPC(npc)
+    if not npc or not npc.model or not npc.model.Parent then return end
+    if not character or not character.Parent then return end
+    if not humanoidRootPart or not humanoidRootPart.Parent then return end
     
-    if not character or not character.Parent then
-        character = player.Character or player.CharacterAdded:Wait()
-        humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-        humanoid = character:WaitForChild("Humanoid")
-    end
-    
-    if not humanoidRootPart or not humanoidRootPart.Parent then return false end
-    
-    -- Cari Head dulu buat tinggi akurat
+    -- Cari Head
     local headPart = npc.model:FindFirstChild("Head")
     local baseY = headPart and headPart.Position.Y or npc.root.Position.Y
     
-    -- Posisi DI ATAS KEPALA NPC
+    -- Posisi DI ATAS KEPALA
     local topPos = Vector3.new(
         npc.root.Position.X,
         baseY + CONFIG.TELEPORT_HEIGHT,
@@ -283,10 +289,15 @@ local function teleportToNPC(npc)
     )
     
     pcall(function()
-        humanoidRootPart.CFrame = CFrame.new(topPos, Vector3.new(npc.root.Position.X, npc.root.Position.Y, npc.root.Position.Z))
+        humanoidRootPart.CFrame = CFrame.new(topPos)
         humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+        humanoidRootPart.RotVelocity = Vector3.new(0, 0, 0)
     end)
-    
+end
+
+-- Wrapper buat tombol teleport
+local function teleportToNPC(npc)
+    lockToNPC(npc)
     return true
 end
 
@@ -341,7 +352,7 @@ end
 local function startAutoFarm()
     if isRunning then return end
     isRunning = true
-    log("Started! Mode: Top Attack", Color3.fromRGB(0, 255, 100))
+    log("Started! Mode: LOCK di atas kepala", Color3.fromRGB(0, 255, 100))
     
     task.spawn(function()
         local emptyCount = 0
@@ -362,25 +373,28 @@ local function startAutoFarm()
                 local targetName = currentTarget.model.Name
                 log("Target: " .. targetName, Color3.fromRGB(0, 200, 255))
                 
-                teleportToNPC(currentTarget)
+                -- Lock posisi awal
+                lockToNPC(currentTarget)
                 task.wait(0.1)
                 
-                local killTimeout = tick() + 25
+                -- ========================================
+                -- LOCK LOOP (background, update terus)
+                -- ========================================
+                if lockConnection then
+                    lockConnection:Disconnect()
+                end
+                lockConnection = RunService.Heartbeat:Connect(function()
+                    if currentTarget and isRunning then
+                        lockToNPC(currentTarget)
+                    end
+                end)
+                
+                -- Attack loop
+                local killTimeout = tick() + 30
                 while currentTarget and currentTarget.humanoid 
                     and currentTarget.humanoid.Health > 0 
                     and isRunning 
                     and tick() < killTimeout do
-                    
-                    -- Cek jarak, teleport ulang kalo NPC gerak
-                    if currentTarget.root and currentTarget.root.Parent and humanoidRootPart then
-                        local dist = (humanoidRootPart.Position - currentTarget.root.Position).Magnitude
-                        
-                        -- Kalo NPC gerak jauh atau player jatuh, teleport lagi ke atas kepala
-                        if dist > 15 then
-                            teleportToNPC(currentTarget)
-                            task.wait(0.05)
-                        end
-                    end
                     
                     attackNPC(currentTarget)
                     task.wait(CONFIG.ATTACK_COOLDOWN)
@@ -388,6 +402,12 @@ local function startAutoFarm()
                     if not currentTarget.model or not currentTarget.model.Parent then
                         break
                     end
+                end
+                
+                -- Stop lock
+                if lockConnection then
+                    lockConnection:Disconnect()
+                    lockConnection = nil
                 end
                 
                 log("✓ Killed: " .. targetName, Color3.fromRGB(100, 255, 100))
@@ -407,6 +427,13 @@ end
 local function stopAutoFarm()
     isRunning = false
     currentTarget = nil
+    
+    -- Stop lock
+    if lockConnection then
+        lockConnection:Disconnect()
+        lockConnection = nil
+    end
+    
     log("Stopped.", Color3.fromRGB(255, 100, 100))
 end
 
@@ -448,7 +475,7 @@ Title.Size = UDim2.new(1, -60, 1, 0)
 Title.Position = UDim2.new(0, 10, 0, 0)
 Title.BackgroundTransparency = 1
 Title.TextColor3 = Color3.fromRGB(0, 255, 150)
-Title.Text = "🎯 AUTOFARM v4.6"
+Title.Text = "🎯 AUTOFARM v4.7"
 Title.TextSize = 14
 Title.Font = Enum.Font.GothamBold
 Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -487,7 +514,7 @@ WLInfo.Size = UDim2.new(1, -20, 0, 20)
 WLInfo.Position = UDim2.new(0, 10, 0, 42)
 WLInfo.BackgroundTransparency = 1
 WLInfo.TextColor3 = Color3.fromRGB(0, 200, 255)
-WLInfo.Text = "🎯 4 NPC | Mode: ATAS KEPALA"
+WLInfo.Text = "🎯 LOCK MODE | 4 NPC"
 WLInfo.TextSize = 10
 WLInfo.Font = Enum.Font.GothamBold
 WLInfo.TextXAlignment = Enum.TextXAlignment.Left
@@ -552,7 +579,6 @@ NPCListLabel.TextXAlignment = Enum.TextXAlignment.Left
 NPCListLabel.TextWrapped = true
 NPCListLabel.Parent = MainFrame
 
--- TELEPORT BUTTON (BARU)
 local TeleportBtn = Instance.new("TextButton")
 TeleportBtn.Size = UDim2.new(1, -20, 0, 30)
 TeleportBtn.Position = UDim2.new(0, 10, 0, 205)
@@ -614,7 +640,7 @@ Credit.Size = UDim2.new(1, 0, 0, 15)
 Credit.Position = UDim2.new(0, 0, 1, -15)
 Credit.BackgroundTransparency = 1
 Credit.TextColor3 = Color3.fromRGB(80, 80, 100)
-Credit.Text = "by Kyriel v4.6 - Top Attack"
+Credit.Text = "by Kyriel v4.7 - Lock Mode"
 Credit.TextSize = 9
 Credit.Font = Enum.Font.Gotham
 Credit.Parent = MainFrame
@@ -705,7 +731,7 @@ LogList.Padding = UDim.new(0, 2)
 LogList.Parent = LogScroll
 
 -- ============================================================
--- NPC LIST POPUP (buat LIHAT & TELEPORT)
+-- NPC LIST POPUP
 -- ============================================================
 local ListPopup = Instance.new("Frame")
 ListPopup.Size = UDim2.new(0, 300, 0, 300)
@@ -774,7 +800,6 @@ local ListLayout = Instance.new("UIListLayout")
 ListLayout.Padding = UDim.new(0, 3)
 ListLayout.Parent = ListScroll
 
--- Fungsi refresh list (sekarang bisa diklik buat teleport)
 local function refreshNPCList()
     for _, child in ipairs(ListScroll:GetChildren()) do
         if child:IsA("TextButton") then
@@ -812,7 +837,6 @@ local function refreshNPCList()
         bc.CornerRadius = UDim.new(0, 4)
         bc.Parent = btn
         
-        -- Click buat teleport
         btn.MouseButton1Click:Connect(function()
             if npc.model and npc.model.Parent then
                 teleportToNPC(npc)
@@ -898,8 +922,9 @@ makeDraggable(ListPopup, ListTitle)
 -- SCAN AWAL
 -- ============================================================
 log("==================================================", Color3.fromRGB(0, 200, 255))
-log("  AUTOFARM v4.6 - TOP ATTACK", Color3.fromRGB(0, 200, 255))
-log("  Teleport: " .. CONFIG.TELEPORT_HEIGHT .. " studs DI ATAS KEPALA", Color3.fromRGB(0, 200, 255))
+log("  AUTOFARM v4.7 - LOCK MODE", Color3.fromRGB(0, 200, 255))
+log("  Karakter DILOCK di atas kepala NPC", Color3.fromRGB(0, 200, 255))
+log("  Anti-Gravity: ON", Color3.fromRGB(0, 255, 100))
 log("==================================================", Color3.fromRGB(0, 200, 255))
 
 detectedFolders = detectNPCFolders()
@@ -958,12 +983,11 @@ ToggleButton.MouseButton1Click:Connect(function()
         startAutoFarm()
         ToggleButton.Text = "⏸ STOP"
         ToggleButton.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
-        StatusLabel.Text = "Status: RUNNING (Top Attack)"
+        StatusLabel.Text = "Status: LOCKED"
         StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
     end
 end)
 
--- TELEPORT KE MOB TERDEKAT
 TeleportBtn.MouseButton1Click:Connect(function()
     local npcs = getAllNPCs()
     if #npcs > 0 then
@@ -1056,3 +1080,4 @@ end)
 -- DONE
 -- ============================================================
 log("✅ Script loaded!", Color3.fromRGB(0, 255, 100))
+log("💡 Klik START buat mulai LOCK MODE", Color3.fromRGB(200, 200, 100))
