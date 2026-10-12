@@ -1,15 +1,17 @@
 --[[
 =========================================================
-  UNIVERSAL AUTOFARM v4.2 - FIXED NPC FILTER
+  UNIVERSAL AUTOFARM v4.3 - WHITELIST MODE
   Author: Kyriel (for Boss)
   Executor: Delta / Codex / Wave / Xeno
 =========================================================
 
-FIX v4.2:
-  - HAPUS filter parent folder "quest" (biar musuh di folder Quest ke-serang)
-  - Ganti pake STRICT BLACKLIST nama NPC
-  - Tambah filter invincible (MaxHealth > 1 miliar)
-  - Console on-screen buat Android
+WHITELIST: Cuma serang NPC ini:
+  - Scorpion
+  - Tombguardian
+  - Water Serpent
+  - Tidecrusher Crab
+
+Selain itu SKIP TOTAL.
 =========================================================
 ]]
 
@@ -41,11 +43,19 @@ local CONFIG = {
     SKILL_KEYS = {"Z", "X", "C", "V", "F"},
     SKILL_COOLDOWN = 1.5,
     DEBUG = true,
-    DETECTION_MODE = "smart",
-    -- Whitelist: cuma serang NPC yang namanya mengandung salah satu kata di sini
-    -- Kosongin {} kalo gak pake
-    NPC_WHITELIST = {},
-    -- Blacklist: skip NPC yang namanya mengandung kata di sini
+    -- WAJIB "whitelist" biar cuma serang 4 NPC itu
+    DETECTION_MODE = "whitelist",
+    -- WHITELIST: cuma serang NPC yang namanya ADA SALAH SATU kata ini
+    NPC_WHITELIST = {
+        "Scorpion",
+        "Tombguardian",
+        "TombGuardian",
+        "Water Serpent",
+        "WaterSerpent",
+        "Tidecrusher Crab",
+        "TidecrusherCrab",
+        "Tidecrusher",
+    },
     NPC_BLACKLIST = {},
 }
 
@@ -99,24 +109,7 @@ local function log(msg, color)
 end
 
 -- ============================================================
--- STRICT BLACKLIST NAMA NPC (cuma yang spesifik)
--- ============================================================
-local STRICT_BLACKLIST = {
-    "quest_giver", "questgiver", "quest-giver",
-    "npc_quest", "npcquest",
-    "shopkeeper", "shop_keeper",
-    "blacksmith", "inn_keeper", "innkeeper",
-    "auctioneer", "banker",
-    "vendor_", "_vendor", "vendornpc",
-    "healer_npc",
-    "trainer_npc",
-    "_guard_", "guard_npc",
-    "friendly_npc",
-    "dialog_npc",
-}
-
--- ============================================================
--- SMART FILTER NPC (FIXED)
+-- SMART FILTER NPC - WHITELIST MODE
 -- ============================================================
 local function checkNPC(model)
     if not model or not model:IsA("Model") then
@@ -136,15 +129,15 @@ local function checkNPC(model)
         return false, "dead"
     end
     
-    -- FILTER 1: MaxHealth harus > 0 dan terbatas
+    -- FILTER MaxHealth
     if hum.MaxHealth <= 0 then
         return false, "MaxHealth=0"
     end
     if hum.MaxHealth == math.huge or hum.MaxHealth > 1e9 then
-        return false, "invincible (MaxHealth>1B)"
+        return false, "invincible"
     end
     
-    -- FILTER 2: Atribut
+    -- FILTER ATRIBUT
     for _, attr in ipairs({"Invincible", "IsQuestGiver", "IsFriendly", "IsPassive", "NoDamage"}) do
         if hum:GetAttribute(attr) == true then
             return false, "attr " .. attr
@@ -154,41 +147,28 @@ local function checkNPC(model)
         end
     end
     
-    if hum:GetAttribute("CanBeDamaged") == false then
-        return false, "CanBeDamaged=false"
-    end
-    if hum:GetAttribute("Damageable") == false then
-        return false, "Damageable=false"
-    end
+    -- ========================================
+    -- WHITELIST CHECK (INI YANG PALING PENTING)
+    -- ========================================
+    local modelName = model.Name
+    local nameLower = string.lower(modelName)
     
-    -- FILTER 3: STRICT BLACKLIST (nama NPC)
-    local nameLower = string.lower(model.Name)
-    for _, keyword in ipairs(STRICT_BLACKLIST) do
-        if string.find(nameLower, keyword) then
-            return false, "blacklist: " .. keyword
+    local isWhitelisted = false
+    local matchedName = ""
+    
+    for _, target in ipairs(CONFIG.NPC_WHITELIST) do
+        if string.find(nameLower, string.lower(target)) then
+            isWhitelisted = true
+            matchedName = target
+            break
         end
     end
     
-    -- FILTER 4: User blacklist
-    for _, keyword in ipairs(CONFIG.NPC_BLACKLIST) do
-        if string.find(nameLower, string.lower(keyword)) then
-            return false, "user blacklist: " .. keyword
-        end
+    if not isWhitelisted then
+        return false, "not in whitelist"
     end
     
-    -- FILTER 5: Tag CollectionService (cuma tag spesifik)
-    local tags = CollectionService:GetTags(model)
-    for _, tag in ipairs(tags) do
-        local tagLower = string.lower(tag)
-        if string.find(tagLower, "friendly") 
-            or string.find(tagLower, "invincible")
-            or string.find(tagLower, "passive")
-            or string.find(tagLower, "questgiver") then
-            return false, "tag: " .. tag
-        end
-    end
-    
-    -- FILTER 6: Harus punya root part
+    -- FILTER ROOT PART
     local root = model:FindFirstChild("HumanoidRootPart") 
         or model:FindFirstChild("Head") 
         or model:FindFirstChild("Torso")
@@ -198,22 +178,8 @@ local function checkNPC(model)
         return false, "no root part"
     end
     
-    -- FILTER 7: Whitelist mode (kalo diaktifin)
-    if CONFIG.DETECTION_MODE == "whitelist" and #CONFIG.NPC_WHITELIST > 0 then
-        local matched = false
-        for _, keyword in ipairs(CONFIG.NPC_WHITELIST) do
-            if string.find(nameLower, string.lower(keyword)) then
-                matched = true
-                break
-            end
-        end
-        if not matched then
-            return false, "not in whitelist"
-        end
-    end
-    
     -- LULUS
-    return true, string.format("OK (HP:%d/%d)", math.floor(hum.Health), math.floor(hum.MaxHealth))
+    return true, string.format("✅ %s (HP:%d)", matchedName, math.floor(hum.Health))
 end
 
 local function isNPC(model)
@@ -231,7 +197,7 @@ local function detectNPCFolders()
     
     local function scan(instance, depth)
         depth = depth or 0
-        if depth > 5 then return end
+        if depth > 6 then return end
         
         for _, obj in ipairs(instance:GetChildren()) do
             if obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") then
@@ -282,7 +248,7 @@ local function getAllNPCs()
     
     local function scan(instance, depth)
         depth = depth or 0
-        if depth > 5 then return end
+        if depth > 6 then return end
         
         for _, obj in ipairs(instance:GetChildren()) do
             local ok = checkNPC(obj)
@@ -312,16 +278,7 @@ local function getAllNPCs()
         end
     end
     
-    if CONFIG.DETECTION_MODE == "folder" and CONFIG.NPC_FOLDER_NAME then
-        local folder = workspace:FindFirstChild(CONFIG.NPC_FOLDER_NAME)
-        if folder then
-            scan(folder, 0)
-        else
-            scan(workspace, 0)
-        end
-    else
-        scan(workspace, 0)
-    end
+    scan(workspace, 0)
     
     table.sort(npcs, function(a, b) return a.distance < b.distance end)
     return npcs
@@ -400,7 +357,7 @@ end
 local function startAutoFarm()
     if isRunning then return end
     isRunning = true
-    log("Started!", Color3.fromRGB(0, 255, 100))
+    log("Started! Cari: Scorpion, Tombguardian, Water Serpent, Tidecrusher Crab", Color3.fromRGB(0, 255, 100))
     
     task.spawn(function()
         local emptyCount = 0
@@ -418,10 +375,13 @@ local function startAutoFarm()
                 emptyCount = 0
                 currentTarget = npcs[1]
                 
+                local targetName = currentTarget.model.Name
+                log("Target: " .. targetName, Color3.fromRGB(0, 200, 255))
+                
                 teleportToNPC(currentTarget)
                 task.wait(0.1)
                 
-                local killTimeout = tick() + 10
+                local killTimeout = tick() + 15
                 while currentTarget and currentTarget.humanoid 
                     and currentTarget.humanoid.Health > 0 
                     and isRunning 
@@ -442,11 +402,11 @@ local function startAutoFarm()
                     end
                 end
                 
-                log("NPC killed: " .. tostring(currentTarget and currentTarget.model and currentTarget.model.Name), Color3.fromRGB(100, 255, 100))
+                log("✓ Killed: " .. targetName, Color3.fromRGB(100, 255, 100))
             else
                 emptyCount = emptyCount + 1
                 if emptyCount % 5 == 0 then
-                    log("Gak ada NPC. Nunggu...", Color3.fromRGB(255, 200, 100))
+                    log("Gak ada NPC target. Nunggu...", Color3.fromRGB(255, 200, 100))
                 end
                 task.wait(1)
             end
@@ -471,7 +431,6 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = player:WaitForChild("PlayerGui")
 
--- Main Frame
 local MainFrame = Instance.new("Frame")
 MainFrame.Size = UDim2.new(0, 260, 0, 375)
 MainFrame.Position = UDim2.new(0, 20, 0, 100)
@@ -485,7 +444,6 @@ local UICorner = Instance.new("UICorner")
 UICorner.CornerRadius = UDim.new(0, 10)
 UICorner.Parent = MainFrame
 
--- Title Bar
 local TitleBar = Instance.new("Frame")
 TitleBar.Size = UDim2.new(1, 0, 0, 35)
 TitleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
@@ -502,7 +460,7 @@ Title.Size = UDim2.new(1, -60, 1, 0)
 Title.Position = UDim2.new(0, 10, 0, 0)
 Title.BackgroundTransparency = 1
 Title.TextColor3 = Color3.fromRGB(0, 255, 150)
-Title.Text = "🎯 AUTOFARM v4.2"
+Title.Text = "🎯 AUTOFARM v4.3"
 Title.TextSize = 14
 Title.Font = Enum.Font.GothamBold
 Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -536,17 +494,17 @@ local CloseCorner = Instance.new("UICorner")
 CloseCorner.CornerRadius = UDim.new(0, 5)
 CloseCorner.Parent = CloseBtn
 
--- Folder Label
-local FolderLabel = Instance.new("TextLabel")
-FolderLabel.Size = UDim2.new(1, -20, 0, 20)
-FolderLabel.Position = UDim2.new(0, 10, 0, 42)
-FolderLabel.BackgroundTransparency = 1
-FolderLabel.TextColor3 = Color3.fromRGB(150, 150, 200)
-FolderLabel.Text = "Folder: " .. tostring(CONFIG.NPC_FOLDER_NAME or "None")
-FolderLabel.TextSize = 11
-FolderLabel.Font = Enum.Font.Gotham
-FolderLabel.TextXAlignment = Enum.TextXAlignment.Left
-FolderLabel.Parent = MainFrame
+-- Whitelist Info
+local WLInfo = Instance.new("TextLabel")
+WLInfo.Size = UDim2.new(1, -20, 0, 20)
+WLInfo.Position = UDim2.new(0, 10, 0, 42)
+WLInfo.BackgroundTransparency = 1
+WLInfo.TextColor3 = Color3.fromRGB(0, 200, 255)
+WLInfo.Text = "🎯 WHITELIST: 4 NPC"
+WLInfo.TextSize = 11
+WLInfo.Font = Enum.Font.GothamBold
+WLInfo.TextXAlignment = Enum.TextXAlignment.Left
+WLInfo.Parent = MainFrame
 
 -- NPC Count
 local CountLabel = Instance.new("TextLabel")
@@ -599,51 +557,23 @@ StatusLabel.Font = Enum.Font.Gotham
 StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 StatusLabel.Parent = MainFrame
 
--- Mode Label
-local ModeLabel = Instance.new("TextLabel")
-ModeLabel.Size = UDim2.new(1, -20, 0, 15)
-ModeLabel.Position = UDim2.new(0, 10, 0, 185)
-ModeLabel.BackgroundTransparency = 1
-ModeLabel.TextColor3 = Color3.fromRGB(150, 150, 200)
-ModeLabel.Text = "Detection Mode:"
-ModeLabel.TextSize = 10
-ModeLabel.Font = Enum.Font.Gotham
-ModeLabel.TextXAlignment = Enum.TextXAlignment.Left
-ModeLabel.Parent = MainFrame
-
-local ModeBtn = Instance.new("TextButton")
-ModeBtn.Size = UDim2.new(1, -20, 0, 25)
-ModeBtn.Position = UDim2.new(0, 10, 0, 202)
-ModeBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 80)
-ModeBtn.TextColor3 = Color3.fromRGB(200, 200, 255)
-ModeBtn.Text = "MODE: " .. string.upper(CONFIG.DETECTION_MODE)
-ModeBtn.TextSize = 11
-ModeBtn.Font = Enum.Font.GothamBold
-ModeBtn.Parent = MainFrame
-
-local ModeCorner = Instance.new("UICorner")
-ModeCorner.CornerRadius = UDim.new(0, 6)
-ModeCorner.Parent = ModeBtn
-
--- Folder Selector
-local FolderBtn = Instance.new("TextButton")
-FolderBtn.Size = UDim2.new(1, -20, 0, 25)
-FolderBtn.Position = UDim2.new(0, 10, 0, 230)
-FolderBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 80)
-FolderBtn.TextColor3 = Color3.fromRGB(220, 200, 255)
-FolderBtn.Text = "📁 SELECT FOLDER"
-FolderBtn.TextSize = 11
-FolderBtn.Font = Enum.Font.GothamBold
-FolderBtn.Parent = MainFrame
-
-local FolderCorner = Instance.new("UICorner")
-FolderCorner.CornerRadius = UDim.new(0, 6)
-FolderCorner.Parent = FolderBtn
+-- Info NPC List
+local NPCListLabel = Instance.new("TextLabel")
+NPCListLabel.Size = UDim2.new(1, -20, 0, 15)
+NPCListLabel.Position = UDim2.new(0, 10, 0, 185)
+NPCListLabel.BackgroundTransparency = 1
+NPCListLabel.TextColor3 = Color3.fromRGB(150, 150, 200)
+NPCListLabel.Text = "Scorpion | Tombguardian | Water Serpent | Tidecrusher Crab"
+NPCListLabel.TextSize = 8
+NPCListLabel.Font = Enum.Font.Gotham
+NPCListLabel.TextXAlignment = Enum.TextXAlignment.Left
+NPCListLabel.TextWrapped = true
+NPCListLabel.Parent = MainFrame
 
 -- Rescan Button
 local RescanBtn = Instance.new("TextButton")
-RescanBtn.Size = UDim2.new(1, -20, 0, 25)
-RescanBtn.Position = UDim2.new(0, 10, 0, 260)
+RescanBtn.Size = UDim2.new(1, -20, 0, 30)
+RescanBtn.Position = UDim2.new(0, 10, 0, 205)
 RescanBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 80)
 RescanBtn.TextColor3 = Color3.fromRGB(200, 200, 255)
 RescanBtn.Text = "🔄 RESCAN"
@@ -657,11 +587,11 @@ RescanCorner.Parent = RescanBtn
 
 -- Kill All Button
 local KillAllBtn = Instance.new("TextButton")
-KillAllBtn.Size = UDim2.new(1, -20, 0, 25)
-KillAllBtn.Position = UDim2.new(0, 10, 0, 290)
+KillAllBtn.Size = UDim2.new(1, -20, 0, 30)
+KillAllBtn.Position = UDim2.new(0, 10, 0, 240)
 KillAllBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 50)
 KillAllBtn.TextColor3 = Color3.fromRGB(255, 200, 200)
-KillAllBtn.Text = "⚔ KILL SEMUA"
+KillAllBtn.Text = "⚔ KILL SEMUA TARGET"
 KillAllBtn.TextSize = 11
 KillAllBtn.Font = Enum.Font.Gotham
 KillAllBtn.Parent = MainFrame
@@ -670,10 +600,25 @@ local KillCorner = Instance.new("UICorner")
 KillCorner.CornerRadius = UDim.new(0, 6)
 KillCorner.Parent = KillAllBtn
 
+-- Show List Button
+local ListBtn = Instance.new("TextButton")
+ListBtn.Size = UDim2.new(1, -20, 0, 30)
+ListBtn.Position = UDim2.new(0, 10, 0, 275)
+ListBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 80)
+ListBtn.TextColor3 = Color3.fromRGB(220, 200, 255)
+ListBtn.Text = "📋 LIHAT NPC TARGET"
+ListBtn.TextSize = 11
+ListBtn.Font = Enum.Font.Gotham
+ListBtn.Parent = MainFrame
+
+local ListCorner = Instance.new("UICorner")
+ListCorner.CornerRadius = UDim.new(0, 6)
+ListCorner.Parent = ListBtn
+
 -- Console Button
 local ConsoleBtn = Instance.new("TextButton")
-ConsoleBtn.Size = UDim2.new(1, -20, 0, 25)
-ConsoleBtn.Position = UDim2.new(0, 10, 0, 320)
+ConsoleBtn.Size = UDim2.new(1, -20, 0, 30)
+ConsoleBtn.Position = UDim2.new(0, 10, 0, 310)
 ConsoleBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 40)
 ConsoleBtn.TextColor3 = Color3.fromRGB(150, 255, 150)
 ConsoleBtn.Text = "📋 OPEN CONSOLE"
@@ -691,7 +636,7 @@ Credit.Size = UDim2.new(1, 0, 0, 15)
 Credit.Position = UDim2.new(0, 0, 1, -15)
 Credit.BackgroundTransparency = 1
 Credit.TextColor3 = Color3.fromRGB(80, 80, 100)
-Credit.Text = "by Kyriel v4.2"
+Credit.Text = "by Kyriel v4.3 - Whitelist Mode"
 Credit.TextSize = 9
 Credit.Font = Enum.Font.Gotham
 Credit.Parent = MainFrame
@@ -730,7 +675,7 @@ ConsoleTitleLabel.Size = UDim2.new(1, -100, 1, 0)
 ConsoleTitleLabel.Position = UDim2.new(0, 10, 0, 0)
 ConsoleTitleLabel.BackgroundTransparency = 1
 ConsoleTitleLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
-ConsoleTitleLabel.Text = "📋 CONSOLE - Debug Log"
+ConsoleTitleLabel.Text = "📋 CONSOLE"
 ConsoleTitleLabel.TextSize = 12
 ConsoleTitleLabel.Font = Enum.Font.GothamBold
 ConsoleTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -780,6 +725,111 @@ LogScroll.Parent = ConsolePopup
 local LogList = Instance.new("UIListLayout")
 LogList.Padding = UDim.new(0, 2)
 LogList.Parent = LogScroll
+
+-- ============================================================
+-- NPC LIST POPUP
+-- ============================================================
+local ListPopup = Instance.new("Frame")
+ListPopup.Size = UDim2.new(0, 300, 0, 250)
+ListPopup.Position = UDim2.new(0.5, -150, 0.5, -125)
+ListPopup.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
+ListPopup.BorderSizePixel = 0
+ListPopup.Visible = false
+ListPopup.ZIndex = 20
+ListPopup.Active = true
+ListPopup.Parent = ScreenGui
+
+local ListPopupCorner = Instance.new("UICorner")
+ListPopupCorner.CornerRadius = UDim.new(0, 10)
+ListPopupCorner.Parent = ListPopup
+
+local ListTitle = Instance.new("Frame")
+ListTitle.Size = UDim2.new(1, 0, 0, 30)
+ListTitle.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+ListTitle.BorderSizePixel = 0
+ListTitle.ZIndex = 21
+ListTitle.Active = true
+ListTitle.Parent = ListPopup
+
+local ListTitleCorner = Instance.new("UICorner")
+ListTitleCorner.CornerRadius = UDim.new(0, 10)
+ListTitleCorner.Parent = ListTitle
+
+local ListTitleLabel = Instance.new("TextLabel")
+ListTitleLabel.Size = UDim2.new(1, -40, 1, 0)
+ListTitleLabel.Position = UDim2.new(0, 10, 0, 0)
+ListTitleLabel.BackgroundTransparency = 1
+ListTitleLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
+ListTitleLabel.Text = "🎯 NPC TARGET AKTIF"
+ListTitleLabel.TextSize = 12
+ListTitleLabel.Font = Enum.Font.GothamBold
+ListTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+ListTitleLabel.ZIndex = 22
+ListTitleLabel.Parent = ListTitle
+
+local ListClose = Instance.new("TextButton")
+ListClose.Size = UDim2.new(0, 25, 0, 22)
+ListClose.Position = UDim2.new(1, -28, 0, 4)
+ListClose.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+ListClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+ListClose.Text = "×"
+ListClose.TextSize = 14
+ListClose.Font = Enum.Font.GothamBold
+ListClose.ZIndex = 22
+ListClose.Parent = ListTitle
+
+local ListCloseCorner = Instance.new("UICorner")
+ListCloseCorner.CornerRadius = UDim.new(0, 4)
+ListCloseCorner.Parent = ListClose
+
+local ListScroll = Instance.new("ScrollingFrame")
+ListScroll.Size = UDim2.new(1, -10, 1, -40)
+ListScroll.Position = UDim2.new(0, 5, 0, 35)
+ListScroll.BackgroundTransparency = 1
+ListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+ListScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+ListScroll.ScrollBarThickness = 4
+ListScroll.ZIndex = 21
+ListScroll.Parent = ListPopup
+
+local ListLayout = Instance.new("UIListLayout")
+ListLayout.Padding = UDim.new(0, 2)
+ListLayout.Parent = ListScroll
+
+local function refreshNPCList()
+    for _, child in ipairs(ListScroll:GetChildren()) do
+        if child:IsA("TextLabel") then
+            child:Destroy()
+        end
+    end
+    
+    local npcs = getAllNPCs()
+    
+    if #npcs == 0 then
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(1, -6, 0, 20)
+        lbl.BackgroundTransparency = 1
+        lbl.TextColor3 = Color3.fromRGB(255, 150, 150)
+        lbl.Text = "❌ Gak ada NPC target saat ini"
+        lbl.TextSize = 11
+        lbl.Font = Enum.Font.Gotham
+        lbl.Parent = ListScroll
+        return
+    end
+    
+    for i, npc in ipairs(npcs) do
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(1, -6, 0, 20)
+        lbl.BackgroundTransparency = 1
+        lbl.TextColor3 = Color3.fromRGB(150, 255, 150)
+        lbl.Text = string.format("%d. %s (HP: %d) [%.0f studs]", 
+            i, npc.model.Name, math.floor(npc.humanoid.Health), npc.distance)
+        lbl.TextSize = 11
+        lbl.Font = Enum.Font.Code
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.Parent = ListScroll
+    end
+end
 
 -- ============================================================
 -- FLOATING BUBBLE
@@ -848,26 +898,29 @@ end
 makeDraggable(MainFrame, TitleBar)
 makeDraggable(Bubble, Bubble)
 makeDraggable(ConsolePopup, ConsoleTitle)
+makeDraggable(ListPopup, ListTitle)
 
 -- ============================================================
 -- SCAN AWAL
 -- ============================================================
 log("==================================================", Color3.fromRGB(0, 200, 255))
-log("     AUTOFARM v4.2 - FIXED NPC FILTER", Color3.fromRGB(0, 200, 255))
+log("  AUTOFARM v4.3 - WHITELIST MODE", Color3.fromRGB(0, 200, 255))
+log("  Target: Scorpion, Tombguardian,", Color3.fromRGB(0, 200, 255))
+log("          Water Serpent, Tidecrusher Crab", Color3.fromRGB(0, 200, 255))
 log("==================================================", Color3.fromRGB(0, 200, 255))
 
 detectedFolders = detectNPCFolders()
 
 if #detectedFolders > 0 then
-    log("Folder NPC yang terdeteksi:", Color3.fromRGB(150, 255, 150))
+    log("NPC target ketemu di folder:", Color3.fromRGB(150, 255, 150))
     for i, folder in ipairs(detectedFolders) do
         log(string.format("   [%d] %s -> %d NPC", i, folder.name, folder.count), Color3.fromRGB(200, 200, 100))
     end
     CONFIG.NPC_FOLDER_NAME = detectedFolders[1].name
-    log("Auto-select: " .. CONFIG.NPC_FOLDER_NAME, Color3.fromRGB(0, 255, 100))
     log("Total skipped: " .. skippedCount, Color3.fromRGB(200, 150, 200))
 else
-    log("WARNING: Gak ada NPC musuh terdeteksi!", Color3.fromRGB(255, 100, 100))
+    log("WARNING: Gak ada NPC target terdeteksi!", Color3.fromRGB(255, 100, 100))
+    log("Coba pake RESCAN atau pastikan nama NPC-nya bener.", Color3.fromRGB(255, 200, 100))
 end
 
 log("==================================================", Color3.fromRGB(0, 200, 255))
@@ -882,57 +935,6 @@ task.spawn(function()
         SkipLabel.Text = "Skipped: " .. skippedCount
     end
 end)
-
--- ============================================================
--- FOLDER DROPDOWN
--- ============================================================
-local FolderDropdown = Instance.new("ScrollingFrame")
-FolderDropdown.Size = UDim2.new(0, 200, 0, 150)
-FolderDropdown.Position = UDim2.new(0, 30, 0, 340)
-FolderDropdown.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
-FolderDropdown.BorderSizePixel = 0
-FolderDropdown.Visible = false
-FolderDropdown.ZIndex = 10
-FolderDropdown.Parent = ScreenGui
-
-local FdCorner = Instance.new("UICorner")
-FdCorner.CornerRadius = UDim.new(0, 8)
-FdCorner.Parent = FolderDropdown
-
-local FdList = Instance.new("UIListLayout")
-FdList.Padding = UDim.new(0, 3)
-FdList.Parent = FolderDropdown
-
-local function refreshFolderDropdown()
-    for _, child in ipairs(FolderDropdown:GetChildren()) do
-        if child:IsA("TextButton") then
-            child:Destroy()
-        end
-    end
-    
-    for i, folder in ipairs(detectedFolders) do
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1, -6, 0, 25)
-        btn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
-        btn.TextColor3 = Color3.fromRGB(220, 220, 255)
-        btn.Text = string.format("%s (%d NPC)", folder.name, folder.count)
-        btn.TextSize = 11
-        btn.Font = Enum.Font.Gotham
-        btn.ZIndex = 11
-        btn.Parent = FolderDropdown
-        
-        local bc = Instance.new("UICorner")
-        bc.CornerRadius = UDim.new(0, 4)
-        bc.Parent = btn
-        
-        btn.MouseButton1Click:Connect(function()
-            CONFIG.NPC_FOLDER_NAME = folder.name
-            FolderLabel.Text = "Folder: " .. folder.name
-            FolderDropdown.Visible = false
-            log("Folder selected: " .. folder.name, Color3.fromRGB(0, 255, 100))
-        end)
-    end
-end
 
 -- ============================================================
 -- EVENT HANDLERS
@@ -953,21 +955,6 @@ ToggleButton.MouseButton1Click:Connect(function()
     end
 end)
 
-ModeBtn.MouseButton1Click:Connect(function()
-    if CONFIG.DETECTION_MODE == "smart" then
-        CONFIG.DETECTION_MODE = "folder"
-    else
-        CONFIG.DETECTION_MODE = "smart"
-    end
-    ModeBtn.Text = "MODE: " .. string.upper(CONFIG.DETECTION_MODE)
-    log("Mode changed to: " .. CONFIG.DETECTION_MODE, Color3.fromRGB(0, 200, 255))
-end)
-
-FolderBtn.MouseButton1Click:Connect(function()
-    refreshFolderDropdown()
-    FolderDropdown.Visible = not FolderDropdown.Visible
-end)
-
 RescanBtn.MouseButton1Click:Connect(function()
     log("Rescanning...", Color3.fromRGB(0, 200, 255))
     RescanBtn.Text = "🔄 SCANNING..."
@@ -976,17 +963,14 @@ RescanBtn.MouseButton1Click:Connect(function()
     
     if #detectedFolders > 0 then
         CONFIG.NPC_FOLDER_NAME = detectedFolders[1].name
-        FolderLabel.Text = "Folder: " .. CONFIG.NPC_FOLDER_NAME
-        log("Rescan done. Folder: " .. CONFIG.NPC_FOLDER_NAME, Color3.fromRGB(0, 255, 100))
-    else
-        FolderLabel.Text = "Folder: NONE"
+        log("Rescan done. Total skipped: " .. skippedCount, Color3.fromRGB(0, 255, 100))
     end
     
     RescanBtn.Text = "🔄 RESCAN"
 end)
 
 KillAllBtn.MouseButton1Click:Connect(function()
-    log("Kill all mode...", Color3.fromRGB(255, 150, 100))
+    log("Kill all target mode...", Color3.fromRGB(255, 150, 100))
     KillAllBtn.Text = "⚔ KILLING..."
     
     task.spawn(function()
@@ -1004,9 +988,18 @@ KillAllBtn.MouseButton1Click:Connect(function()
             end
         end
         
-        KillAllBtn.Text = "⚔ KILL SEMUA"
+        KillAllBtn.Text = "⚔ KILL SEMUA TARGET"
         log("Kill all done!", Color3.fromRGB(0, 255, 100))
     end)
+end)
+
+ListBtn.MouseButton1Click:Connect(function()
+    refreshNPCList()
+    ListPopup.Visible = not ListPopup.Visible
+end)
+
+ListClose.MouseButton1Click:Connect(function()
+    ListPopup.Visible = false
 end)
 
 ConsoleBtn.MouseButton1Click:Connect(function()
@@ -1061,5 +1054,5 @@ end)
 -- DONE
 -- ============================================================
 log("✅ Script loaded!", Color3.fromRGB(0, 255, 100))
-log("💡 Kalo NPC salah target, cek Skip Log", Color3.fromRGB(200, 200, 100))
-log("💡 Pake WHITELIST kalo mau cuma serang NPC tertentu", Color3.fromRGB(200, 200, 100))
+log("💡 Cuma serang: Scorpion, Tombguardian, Water Serpent, Tidecrusher Crab", Color3.fromRGB(200, 200, 100))
+log("💡 Klik '📋 LIHAT NPC TARGET' buat liat NPC yang ke-detect", Color3.fromRGB(200, 200, 100))
