@@ -1,14 +1,14 @@
 --[[
 =========================================================
-  UNIVERSAL AUTOFARM v4.5 - ANTI-DEATH EDITION
+  UNIVERSAL AUTOFARM v4.6 - TOP ATTACK EDITION
   Author: Kyriel (for Boss)
   Executor: Delta / Codex / Wave / Xeno
 
-FITUR BARU:
-  - Teleport ke jarak aman (gak nempel NPC)
-  - Hit and run (mundur abis nyerang)
-  - Auto retreat kalo HP rendah
-  - Auto heal detection
+FITUR:
+  - Teleport DI ATAS KEPALA NPC
+  - Hapus auto-retreat
+  - Tombol TELEPORT KE MOB (pilih dari list)
+  - Whitelist 4 NPC
 =========================================================
 ]]
 
@@ -18,7 +18,6 @@ FITUR BARU:
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local VirtualUser = game:GetService("VirtualUser")
-local CollectionService = game:GetService("CollectionService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -30,11 +29,7 @@ local humanoid = character:WaitForChild("Humanoid")
 -- ============================================================
 local CONFIG = {
     ATTACK_RANGE = 100,
-    TELEPORT_HEIGHT = 3,
-    TELEPORT_DISTANCE = 20,       -- Jarak aman dari NPC (studs)
-    RETREAT_AFTER_ATTACK = true,  -- Mundur abis nyerang
-    RETREAT_DISTANCE = 30,        -- Jarak mundur
-    MIN_HP_PERCENT = 35,          -- Kabur kalo HP di bawah 35%
+    TELEPORT_HEIGHT = 10,         -- Ketinggian DI ATAS kepala NPC
     ATTACK_COOLDOWN = 0.2,
     LOOP_DELAY = 0.5,
     AUTO_EQUIP_TOOL = true,
@@ -42,7 +37,6 @@ local CONFIG = {
     SKILL_KEYS = {"Z", "X", "C", "V", "F"},
     SKILL_COOLDOWN = 2,
     DEBUG = true,
-    DETECTION_MODE = "whitelist",
     NPC_WHITELIST = {
         "Scorpion",
         "Tombguardian",
@@ -108,16 +102,6 @@ local function log(msg, color)
             logCount = logCount - 1
         end
     end
-end
-
--- ============================================================
--- CEK HP RENDAH
--- ============================================================
-local function isHPLow()
-    if not humanoid or not humanoid.Parent then return false end
-    if humanoid.MaxHealth <= 0 then return false end
-    local hpPercent = (humanoid.Health / humanoid.MaxHealth) * 100
-    return hpPercent < CONFIG.MIN_HP_PERCENT
 end
 
 -- ============================================================
@@ -274,7 +258,7 @@ local function getAllNPCs()
 end
 
 -- ============================================================
--- TELEPORT KE JARAK AMAN (BUKAN NEMPEL)
+-- TELEPORT DI ATAS KEPALA NPC
 -- ============================================================
 local function teleportToNPC(npc)
     if not npc or not npc.root or not npc.root.Parent then return false end
@@ -287,25 +271,19 @@ local function teleportToNPC(npc)
     
     if not humanoidRootPart or not humanoidRootPart.Parent then return false end
     
-    local npcPos = npc.root.Position
-    local myPos = humanoidRootPart.Position
+    -- Cari Head dulu buat tinggi akurat
+    local headPart = npc.model:FindFirstChild("Head")
+    local baseY = headPart and headPart.Position.Y or npc.root.Position.Y
     
-    -- Arah dari NPC ke player
-    local direction = (myPos - npcPos)
-    direction = Vector3.new(direction.X, 0, direction.Z)
-    
-    if direction.Magnitude < 1 then
-        local angle = math.random() * math.pi * 2
-        direction = Vector3.new(math.cos(angle), 0, math.sin(angle))
-    end
-    
-    direction = direction.Unit
-    
-    -- Posisi target: NPC + arah * jarak aman
-    local safePos = npcPos + (direction * CONFIG.TELEPORT_DISTANCE) + Vector3.new(0, CONFIG.TELEPORT_HEIGHT, 0)
+    -- Posisi DI ATAS KEPALA NPC
+    local topPos = Vector3.new(
+        npc.root.Position.X,
+        baseY + CONFIG.TELEPORT_HEIGHT,
+        npc.root.Position.Z
+    )
     
     pcall(function()
-        humanoidRootPart.CFrame = CFrame.new(safePos, npcPos)
+        humanoidRootPart.CFrame = CFrame.new(topPos, Vector3.new(npc.root.Position.X, npc.root.Position.Y, npc.root.Position.Z))
         humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
     end)
     
@@ -313,45 +291,11 @@ local function teleportToNPC(npc)
 end
 
 -- ============================================================
--- RETREAT (MUNDUR DARI NPC)
--- ============================================================
-local function retreatFromNPC(npc)
-    if not npc or not npc.root or not npc.root.Parent then return end
-    if not humanoidRootPart or not humanoidRootPart.Parent then return end
-    
-    local npcPos = npc.root.Position
-    local myPos = humanoidRootPart.Position
-    
-    local direction = (myPos - npcPos)
-    direction = Vector3.new(direction.X, 0, direction.Z)
-    
-    if direction.Magnitude < 1 then
-        local angle = math.random() * math.pi * 2
-        direction = Vector3.new(math.cos(angle), 0, math.sin(angle))
-    end
-    
-    direction = direction.Unit
-    
-    local retreatPos = npcPos + (direction * CONFIG.RETREAT_DISTANCE) + Vector3.new(0, CONFIG.TELEPORT_HEIGHT, 0)
-    
-    pcall(function()
-        humanoidRootPart.CFrame = CFrame.new(retreatPos, npcPos)
-        humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
-    end)
-end
-
--- ============================================================
--- SERANG (HIT AND RUN)
+-- SERANG
 -- ============================================================
 local function attackNPC(npc)
     if not npc or not npc.model or not npc.model.Parent then return end
     if not npc.humanoid or npc.humanoid.Health <= 0 then return end
-    
-    -- Kalo HP rendah, retreat dulu
-    if isHPLow() then
-        retreatFromNPC(npc)
-        return
-    end
     
     -- Auto equip tool
     if CONFIG.AUTO_EQUIP_TOOL then
@@ -389,12 +333,6 @@ local function attackNPC(npc)
         end
         lastSkillTime = tick()
     end
-    
-    -- HIT AND RUN
-    if CONFIG.RETREAT_AFTER_ATTACK then
-        task.wait(0.05)
-        retreatFromNPC(npc)
-    end
 end
 
 -- ============================================================
@@ -403,7 +341,7 @@ end
 local function startAutoFarm()
     if isRunning then return end
     isRunning = true
-    log("Started! Mode: Hit & Run", Color3.fromRGB(0, 255, 100))
+    log("Started! Mode: Top Attack", Color3.fromRGB(0, 255, 100))
     
     task.spawn(function()
         local emptyCount = 0
@@ -433,33 +371,14 @@ local function startAutoFarm()
                     and isRunning 
                     and tick() < killTimeout do
                     
-                    -- Cek HP dulu
-                    if isHPLow() then
-                        log("⚠ HP LOW! Retreat...", Color3.fromRGB(255, 100, 100))
-                        retreatFromNPC(currentTarget)
-                        task.wait(3)
-                        
-                        -- Kalo HP masih rendah setelah retreat, tunggu lagi
-                        if isHPLow() then
-                            log("⚠ Masih low, nunggu regen...", Color3.fromRGB(255, 150, 100))
-                            task.wait(3)
-                        end
-                    end
-                    
-                    -- Cek jarak
+                    -- Cek jarak, teleport ulang kalo NPC gerak
                     if currentTarget.root and currentTarget.root.Parent and humanoidRootPart then
                         local dist = (humanoidRootPart.Position - currentTarget.root.Position).Magnitude
                         
-                        -- Kalo terlalu jauh, teleport lagi
-                        if dist > CONFIG.ATTACK_RANGE then
+                        -- Kalo NPC gerak jauh atau player jatuh, teleport lagi ke atas kepala
+                        if dist > 15 then
                             teleportToNPC(currentTarget)
-                            task.wait(0.1)
-                        end
-                        
-                        -- Kalo terlalu dekat (kayak nempel), teleport ke jarak aman
-                        if dist < 10 then
-                            teleportToNPC(currentTarget)
-                            task.wait(0.1)
+                            task.wait(0.05)
                         end
                     end
                     
@@ -529,7 +448,7 @@ Title.Size = UDim2.new(1, -60, 1, 0)
 Title.Position = UDim2.new(0, 10, 0, 0)
 Title.BackgroundTransparency = 1
 Title.TextColor3 = Color3.fromRGB(0, 255, 150)
-Title.Text = "🎯 AUTOFARM v4.5"
+Title.Text = "🎯 AUTOFARM v4.6"
 Title.TextSize = 14
 Title.Font = Enum.Font.GothamBold
 Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -568,7 +487,7 @@ WLInfo.Size = UDim2.new(1, -20, 0, 20)
 WLInfo.Position = UDim2.new(0, 10, 0, 42)
 WLInfo.BackgroundTransparency = 1
 WLInfo.TextColor3 = Color3.fromRGB(0, 200, 255)
-WLInfo.Text = "🎯 WHITELIST: 4 NPC | Hit&Run"
+WLInfo.Text = "🎯 4 NPC | Mode: ATAS KEPALA"
 WLInfo.TextSize = 10
 WLInfo.Font = Enum.Font.GothamBold
 WLInfo.TextXAlignment = Enum.TextXAlignment.Left
@@ -633,9 +552,24 @@ NPCListLabel.TextXAlignment = Enum.TextXAlignment.Left
 NPCListLabel.TextWrapped = true
 NPCListLabel.Parent = MainFrame
 
+-- TELEPORT BUTTON (BARU)
+local TeleportBtn = Instance.new("TextButton")
+TeleportBtn.Size = UDim2.new(1, -20, 0, 30)
+TeleportBtn.Position = UDim2.new(0, 10, 0, 205)
+TeleportBtn.BackgroundColor3 = Color3.fromRGB(0, 130, 200)
+TeleportBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+TeleportBtn.Text = "⚡ TELEPORT KE MOB"
+TeleportBtn.TextSize = 11
+TeleportBtn.Font = Enum.Font.GothamBold
+TeleportBtn.Parent = MainFrame
+
+local TeleCorner = Instance.new("UICorner")
+TeleCorner.CornerRadius = UDim.new(0, 6)
+TeleCorner.Parent = TeleportBtn
+
 local RescanBtn = Instance.new("TextButton")
 RescanBtn.Size = UDim2.new(1, -20, 0, 30)
-RescanBtn.Position = UDim2.new(0, 10, 0, 205)
+RescanBtn.Position = UDim2.new(0, 10, 0, 240)
 RescanBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 80)
 RescanBtn.TextColor3 = Color3.fromRGB(200, 200, 255)
 RescanBtn.Text = "🔄 RESCAN"
@@ -646,20 +580,6 @@ RescanBtn.Parent = MainFrame
 local RescanCorner = Instance.new("UICorner")
 RescanCorner.CornerRadius = UDim.new(0, 6)
 RescanCorner.Parent = RescanBtn
-
-local KillAllBtn = Instance.new("TextButton")
-KillAllBtn.Size = UDim2.new(1, -20, 0, 30)
-KillAllBtn.Position = UDim2.new(0, 10, 0, 240)
-KillAllBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 50)
-KillAllBtn.TextColor3 = Color3.fromRGB(255, 200, 200)
-KillAllBtn.Text = "⚔ KILL SEMUA TARGET"
-KillAllBtn.TextSize = 11
-KillAllBtn.Font = Enum.Font.Gotham
-KillAllBtn.Parent = MainFrame
-
-local KillCorner = Instance.new("UICorner")
-KillCorner.CornerRadius = UDim.new(0, 6)
-KillCorner.Parent = KillAllBtn
 
 local ListBtn = Instance.new("TextButton")
 ListBtn.Size = UDim2.new(1, -20, 0, 30)
@@ -694,7 +614,7 @@ Credit.Size = UDim2.new(1, 0, 0, 15)
 Credit.Position = UDim2.new(0, 0, 1, -15)
 Credit.BackgroundTransparency = 1
 Credit.TextColor3 = Color3.fromRGB(80, 80, 100)
-Credit.Text = "by Kyriel v4.5 - Anti-Death"
+Credit.Text = "by Kyriel v4.6 - Top Attack"
 Credit.TextSize = 9
 Credit.Font = Enum.Font.Gotham
 Credit.Parent = MainFrame
@@ -785,11 +705,11 @@ LogList.Padding = UDim.new(0, 2)
 LogList.Parent = LogScroll
 
 -- ============================================================
--- NPC LIST POPUP
+-- NPC LIST POPUP (buat LIHAT & TELEPORT)
 -- ============================================================
 local ListPopup = Instance.new("Frame")
-ListPopup.Size = UDim2.new(0, 300, 0, 250)
-ListPopup.Position = UDim2.new(0.5, -150, 0.5, -125)
+ListPopup.Size = UDim2.new(0, 300, 0, 300)
+ListPopup.Position = UDim2.new(0.5, -150, 0.5, -150)
 ListPopup.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
 ListPopup.BorderSizePixel = 0
 ListPopup.Visible = false
@@ -818,8 +738,8 @@ ListTitleLabel.Size = UDim2.new(1, -40, 1, 0)
 ListTitleLabel.Position = UDim2.new(0, 10, 0, 0)
 ListTitleLabel.BackgroundTransparency = 1
 ListTitleLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
-ListTitleLabel.Text = "🎯 NPC TARGET AKTIF"
-ListTitleLabel.TextSize = 12
+ListTitleLabel.Text = "🎯 NPC TARGET (TAP BUAT TELEPORT)"
+ListTitleLabel.TextSize = 11
 ListTitleLabel.Font = Enum.Font.GothamBold
 ListTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 ListTitleLabel.ZIndex = 22
@@ -851,12 +771,13 @@ ListScroll.ZIndex = 21
 ListScroll.Parent = ListPopup
 
 local ListLayout = Instance.new("UIListLayout")
-ListLayout.Padding = UDim.new(0, 2)
+ListLayout.Padding = UDim.new(0, 3)
 ListLayout.Parent = ListScroll
 
+-- Fungsi refresh list (sekarang bisa diklik buat teleport)
 local function refreshNPCList()
     for _, child in ipairs(ListScroll:GetChildren()) do
-        if child:IsA("TextLabel") then
+        if child:IsA("TextButton") then
             child:Destroy()
         end
     end
@@ -876,16 +797,31 @@ local function refreshNPCList()
     end
     
     for i, npc in ipairs(npcs) do
-        local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(1, -6, 0, 20)
-        lbl.BackgroundTransparency = 1
-        lbl.TextColor3 = Color3.fromRGB(150, 255, 150)
-        lbl.Text = string.format("%d. %s (HP: %d) [%.0f]", 
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(1, -6, 0, 30)
+        btn.BackgroundColor3 = Color3.fromRGB(40, 60, 80)
+        btn.TextColor3 = Color3.fromRGB(150, 255, 200)
+        btn.Text = string.format("%d. %s (HP: %d) [%.0f]", 
             i, npc.model.Name, math.floor(npc.humanoid.Health), npc.distance)
-        lbl.TextSize = 11
-        lbl.Font = Enum.Font.Code
-        lbl.TextXAlignment = Enum.TextXAlignment.Left
-        lbl.Parent = ListScroll
+        btn.TextSize = 11
+        btn.Font = Enum.Font.Code
+        btn.ZIndex = 22
+        btn.Parent = ListScroll
+        
+        local bc = Instance.new("UICorner")
+        bc.CornerRadius = UDim.new(0, 4)
+        bc.Parent = btn
+        
+        -- Click buat teleport
+        btn.MouseButton1Click:Connect(function()
+            if npc.model and npc.model.Parent then
+                teleportToNPC(npc)
+                log("⚡ Teleport ke: " .. npc.model.Name, Color3.fromRGB(0, 200, 255))
+                ListPopup.Visible = false
+            else
+                log("❌ NPC udah ilang", Color3.fromRGB(255, 100, 100))
+            end
+        end)
     end
 end
 
@@ -962,10 +898,8 @@ makeDraggable(ListPopup, ListTitle)
 -- SCAN AWAL
 -- ============================================================
 log("==================================================", Color3.fromRGB(0, 200, 255))
-log("  AUTOFARM v4.5 - ANTI-DEATH EDITION", Color3.fromRGB(0, 200, 255))
-log("  Jarak aman: " .. CONFIG.TELEPORT_DISTANCE .. " studs", Color3.fromRGB(0, 200, 255))
-log("  Retreat: " .. CONFIG.RETREAT_DISTANCE .. " studs", Color3.fromRGB(0, 200, 255))
-log("  Min HP: " .. CONFIG.MIN_HP_PERCENT .. "%", Color3.fromRGB(0, 200, 255))
+log("  AUTOFARM v4.6 - TOP ATTACK", Color3.fromRGB(0, 200, 255))
+log("  Teleport: " .. CONFIG.TELEPORT_HEIGHT .. " studs DI ATAS KEPALA", Color3.fromRGB(0, 200, 255))
 log("==================================================", Color3.fromRGB(0, 200, 255))
 
 detectedFolders = detectNPCFolders()
@@ -983,7 +917,6 @@ end
 -- ============================================================
 task.spawn(function()
     while task.wait(1) do
-        -- Update HP label tiap 1 detik
         if humanoid and humanoid.Parent then
             local hpPct = math.floor((humanoid.Health / humanoid.MaxHealth) * 100)
             HPLabel.Text = string.format("HP: %d/%d (%d%%)", 
@@ -991,7 +924,7 @@ task.spawn(function()
                 math.floor(humanoid.MaxHealth), 
                 hpPct)
             
-            if hpPct < CONFIG.MIN_HP_PERCENT then
+            if hpPct < 30 then
                 HPLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
             elseif hpPct < 60 then
                 HPLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
@@ -1025,8 +958,26 @@ ToggleButton.MouseButton1Click:Connect(function()
         startAutoFarm()
         ToggleButton.Text = "⏸ STOP"
         ToggleButton.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
-        StatusLabel.Text = "Status: RUNNING (Hit&Run)"
+        StatusLabel.Text = "Status: RUNNING (Top Attack)"
         StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
+    end
+end)
+
+-- TELEPORT KE MOB TERDEKAT
+TeleportBtn.MouseButton1Click:Connect(function()
+    local npcs = getAllNPCs()
+    if #npcs > 0 then
+        local target = npcs[1]
+        teleportToNPC(target)
+        log("⚡ Teleport ke: " .. target.model.Name, Color3.fromRGB(0, 200, 255))
+        TeleportBtn.Text = "✓ KE " .. target.model.Name
+        task.wait(1)
+        TeleportBtn.Text = "⚡ TELEPORT KE MOB"
+    else
+        log("❌ Gak ada NPC target!", Color3.fromRGB(255, 100, 100))
+        TeleportBtn.Text = "❌ GAK ADA NPC"
+        task.wait(1)
+        TeleportBtn.Text = "⚡ TELEPORT KE MOB"
     end
 end)
 
@@ -1041,34 +992,6 @@ RescanBtn.MouseButton1Click:Connect(function()
     end
     
     RescanBtn.Text = "🔄 RESCAN"
-end)
-
-KillAllBtn.MouseButton1Click:Connect(function()
-    log("Kill all mode...", Color3.fromRGB(255, 150, 100))
-    KillAllBtn.Text = "⚔ KILLING..."
-    
-    task.spawn(function()
-        local npcs = getAllNPCs()
-        for _, npc in ipairs(npcs) do
-            if not isRunning then break end
-            teleportToNPC(npc)
-            task.wait(0.1)
-            
-            local timeout = tick() + 8
-            while npc.humanoid and npc.humanoid.Health > 0 and tick() < timeout do
-                if isHPLow() then
-                    log("⚠ HP LOW! Skip target", Color3.fromRGB(255, 100, 100))
-                    break
-                end
-                attackNPC(npc)
-                task.wait(0.15)
-                if not npc.model or not npc.model.Parent then break end
-            end
-        end
-        
-        KillAllBtn.Text = "⚔ KILL SEMUA TARGET"
-        log("Kill all done!", Color3.fromRGB(0, 255, 100))
-    end)
 end)
 
 ListBtn.MouseButton1Click:Connect(function()
