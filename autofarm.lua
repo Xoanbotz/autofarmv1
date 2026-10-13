@@ -39,7 +39,7 @@ end)
 -- ============================================================
 local CONFIG = {
     ATTACK_RANGE = 100,
-    TELEPORT_HEIGHT = 13,          -- Ketinggian DI ATAS kepala NPC
+    TELEPORT_HEIGHT = 17,          -- Ketinggian DI ATAS kepala NPC
     LOCK_UPDATE_RATE = 0.05,      -- Update posisi tiap 50ms
     ATTACK_COOLDOWN = 0.15,
     LOOP_DELAY = 0.5,
