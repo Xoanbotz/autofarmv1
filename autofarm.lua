@@ -24,15 +24,7 @@ local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-local humanoid = character:WaitForChild("Humanoid")
-
--- ============================================================
--- ANTI-GRAVITY (BIAR GAK JATUH)
--- ============================================================
-local originalGravity = workspace.Gravity
-pcall(function()
-    workspace.Gravity = 0
-end)
+local humanoid = character:WaitForChild("Humanoid") 
 
 -- ============================================================
 -- KONFIGURASI
