@@ -52,9 +52,9 @@ local CONFIG = {
         "Scorpion",
         "Tombguardian",
         "Water Serpent",
-        "Tidecrusher Crab",
+    
         "WaterSerpent",
-        "TidecrusherCrab",
+     
     },
     NPC_BLACKLIST = {},
     MAX_DEPTH = 4,
