@@ -1,14 +1,13 @@
 --[[
 =========================================================
-  UNIVERSAL AUTOFARM v4.9 FINAL
+  UNIVERSAL AUTOFARM v4.9 FINAL FIXED
   Author: Kyriel (for Boss)
   Executor: Delta / Codex / Wave / Xeno
 
 FITUR:
   - Autofarm LOCK di atas kepala NPC (Scorpion, Tombguardian, Water Serpent)
-  - STEALTH PLANT COLLECTOR (dari jauh, auto teleport ke plant, balik)
-  - Plants: Ginseng, Lily, Essence Leaf, Spirit Grass, Lotus
-  - Tombol terpisah buat autofarm & plant
+  - STEALTH PLANT COLLECTOR (cuma Ginseng & Spirit Grass)
+  - Teleport delay diperlambat biar plant ke-collect beneran
 =========================================================
 ]]
 
@@ -39,22 +38,19 @@ local CONFIG = {
     SKILL_KEYS = {"Z", "X", "C", "V", "F"},
     SKILL_COOLDOWN = 2.5,
     
-    -- PLANT COLLECTOR
+    -- PLANT COLLECTOR (CUMA GINSENG & SPIRIT GRASS)
     PLANT_NAMES = {
         "Ginseng",
-        "Lily",
-        "Essence Leaf",
-        "EssenceLeaf",
         "Spirit Grass",
         "SpiritGrass",
-        "Lotus",
     },
-    PLANT_SCAN_DELAY = 2,          -- Delay antar scan (detik)
+    PLANT_SCAN_DELAY = 3,           -- Delay antar scan (detik)
     PLANT_MAX_DEPTH = 6,
     FORCE_PROMPT_DISTANCE = true,
-    PLANT_TELEPORT_DELAY = 0.03,   -- Delay teleport per plant (kecil = cepet)
+    PLANT_TELEPORT_DELAY = 0.3,     -- Teleport tunggu 0.3s (biar server detect posisi)
+    PLANT_AFTER_FIRE_DELAY = 0.5,   -- Tunggu abis fire prompt (biar server proses)
     
-    -- NPC (TIDECRUSHER DIHAPUS)
+    -- NPC
     NPC_WHITELIST = {
         "Scorpion",
         "Tombguardian",
@@ -400,7 +396,7 @@ local function stopAutoFarm()
 end
 
 -- ============================================================
--- PLANT COLLECTOR - STEALTH MODE (DARI JAUH)
+-- PLANT COLLECTOR - STEALTH MODE (DIPERLAMBAT)
 -- ============================================================
 local function isPlantName(name)
     local nameLower = string.lower(name)
@@ -462,7 +458,7 @@ local function findAllPlants()
     return plants
 end
 
--- STEALTH COLLECT: teleport ke plant, fire prompt, balik
+-- STEALTH COLLECT: teleport ke plant, fire prompt, balik (DIPERLAMBAT)
 local function collectAllPlantsStealth()
     local collected = 0
     local foundTypes = {}
@@ -494,6 +490,7 @@ local function collectAllPlantsStealth()
                 end
             end)
             
+            -- Tunggu server detect posisi kita (DIPERLAMBAT)
             task.wait(CONFIG.PLANT_TELEPORT_DELAY)
             
             -- Fire prompt
@@ -520,9 +517,11 @@ local function collectAllPlantsStealth()
             if success then
                 collected = collected + 1
                 foundTypes[plant.name] = (foundTypes[plant.name] or 0) + 1
+                log("  ✓ " .. plant.name .. " (" .. i .. "/" .. #plants .. ")", Color3.fromRGB(100, 255, 150))
             end
             
-            task.wait(CONFIG.PLANT_TELEPORT_DELAY)
+            -- Tunggu server proses collect (DIPERLAMBAT)
+            task.wait(CONFIG.PLANT_AFTER_FIRE_DELAY)
         end
     end
     
@@ -610,7 +609,7 @@ Title.Size = UDim2.new(1, -60, 1, 0)
 Title.Position = UDim2.new(0, 10, 0, 0)
 Title.BackgroundTransparency = 1
 Title.TextColor3 = Color3.fromRGB(0, 255, 150)
-Title.Text = "🎯 v4.9 FINAL - FARM + PLANT"
+Title.Text = "🎯 v4.9 FIXED - FARM + PLANT"
 Title.TextSize = 12
 Title.Font = Enum.Font.GothamBold
 Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -744,7 +743,7 @@ PlantListLabel.Size = UDim2.new(1, -20, 0, 15)
 PlantListLabel.Position = UDim2.new(0, 10, 0, 258)
 PlantListLabel.BackgroundTransparency = 1
 PlantListLabel.TextColor3 = Color3.fromRGB(150, 255, 150)
-PlantListLabel.Text = "Plant: Ginseng|Lily|Essence Leaf|Spirit Grass|Lotus"
+PlantListLabel.Text = "Plant: Ginseng | Spirit Grass"
 PlantListLabel.TextSize = 8
 PlantListLabel.Font = Enum.Font.Gotham
 PlantListLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -826,7 +825,7 @@ Credit.Size = UDim2.new(1, 0, 0, 15)
 Credit.Position = UDim2.new(0, 0, 1, -15)
 Credit.BackgroundTransparency = 1
 Credit.TextColor3 = Color3.fromRGB(80, 80, 100)
-Credit.Text = "by Kyriel v4.9 FINAL"
+Credit.Text = "by Kyriel v4.9 FIXED"
 Credit.TextSize = 9
 Credit.Font = Enum.Font.Gotham
 Credit.Parent = MainFrame
@@ -1108,10 +1107,10 @@ makeDraggable(ListPopup, ListTitle)
 -- SCAN AWAL
 -- ============================================================
 log("==================================================", Color3.fromRGB(0, 200, 255))
-log("  v4.9 FINAL - FARM + STEALTH PLANT", Color3.fromRGB(0, 200, 255))
+log("  v4.9 FIXED - FARM + STEALTH PLANT", Color3.fromRGB(0, 200, 255))
 log("  NPC: Scorpion, Tombguardian, Water Serpent", Color3.fromRGB(0, 200, 255))
-log("  Plant: Ginseng, Lily, Essence Leaf,", Color3.fromRGB(0, 200, 255))
-log("         Spirit Grass, Lotus", Color3.fromRGB(0, 200, 255))
+log("  Plant: Ginseng, Spirit Grass", Color3.fromRGB(0, 200, 255))
+log("  Teleport delay: " .. CONFIG.PLANT_TELEPORT_DELAY .. "s", Color3.fromRGB(0, 200, 255))
 log("==================================================", Color3.fromRGB(0, 200, 255))
 
 detectedFolders = detectNPCFolders()
@@ -1303,4 +1302,4 @@ end)
 -- ============================================================
 log("✅ Script loaded!", Color3.fromRGB(0, 255, 100))
 log("💡 Farm: Scorpion, Tombguardian, Water Serpent", Color3.fromRGB(200, 200, 100))
-log("💡 Plant: STEALTH MODE (teleport cepet, balik ke posisi)", Color3.fromRGB(200, 200, 100))
+log("💡 Plant: Ginseng & Spirit Grass (Stealth slow mode)", Color3.fromRGB(200, 200, 100))
