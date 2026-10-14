@@ -1,15 +1,15 @@
 --[[
 =========================================================
-  UNIVERSAL AUTOFARM v4.7 - LOCK MODE
+  UNIVERSAL AUTOFARM v4.8 - FIXED LAG
   Author: Kyriel (for Boss)
   Executor: Delta / Codex / Wave / Xeno
 
-FITUR:
-  - Karakter DIKUNCI di atas kepala mob
-  - Anti-gravity (gak bisa jatuh)
-  - Update posisi tiap 50ms (mob gerak, lo ikut)
-  - Auto-attack jalan terus
-  - Tombol TELEPORT KE MOB
+FIX v4.8:
+  - HAPUS Heartbeat (60fps) → loop 10fps
+  - Attack loop digabung sama lock loop
+  - Tool di-cache (gak scan tiap attack)
+  - Hapus task.wait di skill
+  - HP update 1s → 2s
 =========================================================
 ]]
 
@@ -19,34 +19,31 @@ FITUR:
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local VirtualUser = game:GetService("VirtualUser")
-local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-local humanoid = character:WaitForChild("Humanoid") 
+local humanoid = character:WaitForChild("Humanoid")
 
 -- ============================================================
 -- KONFIGURASI
 -- ============================================================
 local CONFIG = {
     ATTACK_RANGE = 100,
-    TELEPORT_HEIGHT = 10,          -- Ketinggian DI ATAS kepala NPC
-    LOCK_UPDATE_RATE = 0.05,      -- Update posisi tiap 50ms
-    ATTACK_COOLDOWN = 0.15,
+    TELEPORT_HEIGHT = 10,
+    LOCK_UPDATE_RATE = 0.1,        -- Loop utama tiap 100ms (dari 50ms)
+    ATTACK_COOLDOWN = 0.2,         -- Dari 0.15
     LOOP_DELAY = 0.5,
     AUTO_EQUIP_TOOL = true,
     USE_SKILLS = true,
     SKILL_KEYS = {"Z", "X", "C", "V", "F"},
-    SKILL_COOLDOWN = 2,
+    SKILL_COOLDOWN = 2.5,          -- Dari 2
     DEBUG = true,
     NPC_WHITELIST = {
         "Scorpion",
         "Tombguardian",
-        "Water Serpent",
-    
-        "WaterSerpent",
-     
+        "Water Serpent",     
+        "WaterSerpent",      
     },
     NPC_BLACKLIST = {},
     MAX_DEPTH = 4,
@@ -61,7 +58,7 @@ local detectedFolders = {}
 local skippedCount = 0
 local scanLog = {}
 local logCount = 0
-local lockConnection = nil
+local cachedTool = nil
 
 -- ============================================================
 -- LOG SYSTEM
@@ -269,11 +266,9 @@ local function lockToNPC(npc)
     if not character or not character.Parent then return end
     if not humanoidRootPart or not humanoidRootPart.Parent then return end
     
-    -- Cari Head
     local headPart = npc.model:FindFirstChild("Head")
     local baseY = headPart and headPart.Position.Y or npc.root.Position.Y
     
-    -- Posisi DI ATAS KEPALA
     local topPos = Vector3.new(
         npc.root.Position.X,
         baseY + CONFIG.TELEPORT_HEIGHT,
@@ -294,43 +289,46 @@ local function teleportToNPC(npc)
 end
 
 -- ============================================================
--- SERANG
+-- SERANG (OPTIMIZED - TOOL CACHED)
 -- ============================================================
 local function attackNPC(npc)
     if not npc or not npc.model or not npc.model.Parent then return end
     if not npc.humanoid or npc.humanoid.Health <= 0 then return end
+    if not character or not character.Parent then return end
     
-    -- Auto equip tool
+    -- Auto equip tool (cached)
     if CONFIG.AUTO_EQUIP_TOOL then
         local tool = character:FindFirstChildOfClass("Tool")
-        if not tool then
+        if not tool and not cachedTool then
             for _, item in ipairs(player.Backpack:GetChildren()) do
                 if item:IsA("Tool") then
                     item.Parent = character
+                    cachedTool = item
                     break
                 end
             end
+        elseif tool then
+            cachedTool = tool
         end
     end
     
     -- Activate tool
-    local tool = character:FindFirstChildOfClass("Tool")
+    local tool = cachedTool or character:FindFirstChildOfClass("Tool")
     if tool then
         pcall(function() tool:Activate() end)
     end
     
-    -- Click attack
+    -- Click 1x
     pcall(function()
         VirtualUser:Button1Down(Vector2.new(0, 0))
         VirtualUser:Button1Up(Vector2.new(0, 0))
     end)
     
-    -- Skill
-    if CONFIG.USE_SKILLS and tick() - lastSkillTime > CONFIG.SKILL_COOLDOWN then
+    -- Skill (cuma kalo ada tool, tanpa task.wait)
+    if CONFIG.USE_SKILLS and tool and (tick() - lastSkillTime > CONFIG.SKILL_COOLDOWN) then
         for _, key in ipairs(CONFIG.SKILL_KEYS) do
             pcall(function()
                 VirtualUser:Button1Down(Vector2.new(0, 0))
-                task.wait(0.05)
                 VirtualUser:Button1Up(Vector2.new(0, 0))
             end)
         end
@@ -354,6 +352,7 @@ local function startAutoFarm()
                 character = player.Character or player.CharacterAdded:Wait()
                 humanoidRootPart = character:WaitForChild("HumanoidRootPart")
                 humanoid = character:WaitForChild("Humanoid")
+                cachedTool = nil
             end
             
             local npcs = getAllNPCs()
@@ -369,37 +368,28 @@ local function startAutoFarm()
                 lockToNPC(currentTarget)
                 task.wait(0.1)
                 
-                -- ========================================
-                -- LOCK LOOP (background, update terus)
-                -- ========================================
-                if lockConnection then
-                    lockConnection:Disconnect()
-                end
-                lockConnection = RunService.Heartbeat:Connect(function()
-                    if currentTarget and isRunning then
-                        lockToNPC(currentTarget)
-                    end
-                end)
-                
-                -- Attack loop
+                -- ============================================
+                -- LOCK + ATTACK DALAM 1 LOOP (LEBIH EFISIEN)
+                -- ============================================
                 local killTimeout = tick() + 30
                 while currentTarget and currentTarget.humanoid 
                     and currentTarget.humanoid.Health > 0 
                     and isRunning 
                     and tick() < killTimeout do
                     
-                    attackNPC(currentTarget)
-                    task.wait(CONFIG.ATTACK_COOLDOWN)
+                    -- LOCK POSISI
+                    lockToNPC(currentTarget)
                     
+                    -- ATTACK
+                    attackNPC(currentTarget)
+                    
+                    -- Cek target ilang
                     if not currentTarget.model or not currentTarget.model.Parent then
                         break
                     end
-                end
-                
-                -- Stop lock
-                if lockConnection then
-                    lockConnection:Disconnect()
-                    lockConnection = nil
+                    
+                    -- Delay loop utama
+                    task.wait(CONFIG.LOCK_UPDATE_RATE)
                 end
                 
                 log("✓ Killed: " .. targetName, Color3.fromRGB(100, 255, 100))
@@ -419,13 +409,7 @@ end
 local function stopAutoFarm()
     isRunning = false
     currentTarget = nil
-    
-    -- Stop lock
-    if lockConnection then
-        lockConnection:Disconnect()
-        lockConnection = nil
-    end
-    
+    cachedTool = nil
     log("Stopped.", Color3.fromRGB(255, 100, 100))
 end
 
@@ -467,7 +451,7 @@ Title.Size = UDim2.new(1, -60, 1, 0)
 Title.Position = UDim2.new(0, 10, 0, 0)
 Title.BackgroundTransparency = 1
 Title.TextColor3 = Color3.fromRGB(0, 255, 150)
-Title.Text = "🎯 AUTOFARM v4.7"
+Title.Text = "🎯 AUTOFARM v4.8"
 Title.TextSize = 14
 Title.Font = Enum.Font.GothamBold
 Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -506,7 +490,7 @@ WLInfo.Size = UDim2.new(1, -20, 0, 20)
 WLInfo.Position = UDim2.new(0, 10, 0, 42)
 WLInfo.BackgroundTransparency = 1
 WLInfo.TextColor3 = Color3.fromRGB(0, 200, 255)
-WLInfo.Text = "🎯 LOCK MODE | 4 NPC"
+WLInfo.Text = "🎯 LOCK MODE | NO LAG"
 WLInfo.TextSize = 10
 WLInfo.Font = Enum.Font.GothamBold
 WLInfo.TextXAlignment = Enum.TextXAlignment.Left
@@ -632,7 +616,7 @@ Credit.Size = UDim2.new(1, 0, 0, 15)
 Credit.Position = UDim2.new(0, 0, 1, -15)
 Credit.BackgroundTransparency = 1
 Credit.TextColor3 = Color3.fromRGB(80, 80, 100)
-Credit.Text = "by Kyriel v4.7 - Lock Mode"
+Credit.Text = "by Kyriel v4.8 - No Lag"
 Credit.TextSize = 9
 Credit.Font = Enum.Font.Gotham
 Credit.Parent = MainFrame
@@ -914,9 +898,8 @@ makeDraggable(ListPopup, ListTitle)
 -- SCAN AWAL
 -- ============================================================
 log("==================================================", Color3.fromRGB(0, 200, 255))
-log("  AUTOFARM v4.7 - LOCK MODE", Color3.fromRGB(0, 200, 255))
-log("  Karakter DILOCK di atas kepala NPC", Color3.fromRGB(0, 200, 255))
-log("  Anti-Gravity: ON", Color3.fromRGB(0, 255, 100))
+log("  AUTOFARM v4.8 - FIXED LAG", Color3.fromRGB(0, 200, 255))
+log("  Loop rate: " .. CONFIG.LOCK_UPDATE_RATE .. "s", Color3.fromRGB(0, 200, 255))
 log("==================================================", Color3.fromRGB(0, 200, 255))
 
 detectedFolders = detectNPCFolders()
@@ -930,10 +913,10 @@ else
 end
 
 -- ============================================================
--- REAL-TIME UPDATE
+-- REAL-TIME UPDATE (HP tiap 2s, NPC count tiap 10s)
 -- ============================================================
 task.spawn(function()
-    while task.wait(1) do
+    while task.wait(2) do
         if humanoid and humanoid.Parent then
             local hpPct = math.floor((humanoid.Health / humanoid.MaxHealth) * 100)
             HPLabel.Text = string.format("HP: %d/%d (%d%%)", 
