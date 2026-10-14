@@ -1,7 +1,7 @@
 --[[
 =========================================================
-  UNIVERSAL AUTOFARM v5.0 - FAST FARM EDITION
-  Author: Kyriel (for Boss)
+  UNIVERSAL AUTOFARM v5.1 - HORIZONTAL EDITION
+  Author: Kyriel (for ADIEL)
   Executor: Delta / Codex / Wave / Xeno
 
 FITUR:
@@ -11,7 +11,7 @@ FITUR:
   - Anti-death (auto respawn)
   - Stats: Kills, Kills/menit
   - Stealth Plant Collector (Ginseng & Spirit Grass)
-  - GUI rapi section-based
+  - GUI HORIZONTAL (kesamping)
 =========================================================
 ]]
 
@@ -31,19 +31,17 @@ local humanoid = character:WaitForChild("Humanoid")
 -- CONFIG (TURBO MODE)
 -- ============================================================
 local CONFIG = {
-    -- ═══ AUTOFARM (FAST) ═══
     ATTACK_RANGE = 150,
     TELEPORT_HEIGHT = 10,
-    LOCK_UPDATE_RATE = 0.05,     -- ULTRA FAST
-    ATTACK_COOLDOWN = 0.05,      -- ULTRA FAST
-    LOOP_DELAY = 0.1,            -- ULTRA FAST
+    LOCK_UPDATE_RATE = 0.05,
+    ATTACK_COOLDOWN = 0.05,
+    LOOP_DELAY = 0.1,
     AUTO_EQUIP_TOOL = true,
     USE_SKILLS = true,
     SKILL_KEYS = {"Z", "X", "C", "V", "F"},
-    SKILL_COOLDOWN = 0.8,        -- Lebih cepet spam
-    AUTO_RESPAWN = true,         -- Anti death
+    SKILL_COOLDOWN = 0.8,
+    AUTO_RESPAWN = true,
     
-    -- ═══ PLANT COLLECTOR ═══
     PLANT_NAMES = {
         "Ginseng",
         "Spirit Grass",
@@ -55,7 +53,6 @@ local CONFIG = {
     PLANT_TELEPORT_DELAY = 0.3,
     PLANT_AFTER_FIRE_DELAY = 0.5,
     
-    -- ═══ NPC WHITELIST ═══
     NPC_WHITELIST = {
         "Scorpion",
         "Tombguardian",
@@ -66,7 +63,7 @@ local CONFIG = {
     MAX_DEPTH = 4,
     LOG_LIMIT = 30,
     SCAN_INTERVAL = 10,
-    DEBUG = false,               -- MATIIN log biar ringan
+    DEBUG = false,
 }
 
 -- ============================================================
@@ -76,12 +73,9 @@ local isRunning = false
 local isCollectingPlants = false
 local currentTarget = nil
 local lastSkillTime = 0
-local detectedFolders = {}
-local skippedCount = 0
 local cachedTool = nil
-local lastFarmPosition = nil    -- Buat anti-death
+local lastFarmPosition = nil
 
--- STATISTIK
 local stats = {
     kills = 0,
     collectedPlants = 0,
@@ -134,11 +128,6 @@ end
 -- ============================================================
 -- UTILITY
 -- ============================================================
-local function getHPPercent()
-    if not humanoid or not humanoid.Parent then return 0 end
-    return (humanoid.Health / humanoid.MaxHealth) * 100
-end
-
 local function updateCharacterRefs()
     character = player.Character or player.CharacterAdded:Wait()
     humanoidRootPart = character:WaitForChild("HumanoidRootPart")
@@ -185,7 +174,7 @@ local function checkNPC(model)
 end
 
 -- ============================================================
--- CARI SEMUA NPC (PRIORITAS TERDEKAT)
+-- CARI SEMUA NPC
 -- ============================================================
 local function getAllNPCs()
     local npcs = {}
@@ -253,14 +242,13 @@ local function teleportToNPC(npc)
 end
 
 -- ============================================================
--- ATTACK (OPTIMIZED)
+-- ATTACK
 -- ============================================================
 local function attackNPC(npc)
     if not npc or not npc.model or not npc.model.Parent then return end
     if not npc.humanoid or npc.humanoid.Health <= 0 then return end
     if not character or not character.Parent then return end
     
-    -- Auto equip (cached)
     if CONFIG.AUTO_EQUIP_TOOL then
         local tool = character:FindFirstChildOfClass("Tool")
         if tool then
@@ -281,13 +269,11 @@ local function attackNPC(npc)
         pcall(function() tool:Activate() end)
     end
     
-    -- Click attack
     pcall(function()
         VirtualUser:Button1Down(Vector2.new(0, 0))
         VirtualUser:Button1Up(Vector2.new(0, 0))
     end)
     
-    -- Skill spam
     if CONFIG.USE_SKILLS and tool and (tick() - lastSkillTime > CONFIG.SKILL_COOLDOWN) then
         for _, key in ipairs(CONFIG.SKILL_KEYS) do
             pcall(function()
@@ -300,13 +286,13 @@ local function attackNPC(npc)
 end
 
 -- ============================================================
--- AUTO RESPAWN (ANTI-DEATH)
+-- AUTO RESPAWN
 -- ============================================================
 local function setupAntiDeath()
     if character then
         pcall(function()
             humanoid.Died:Connect(function()
-                log("☠ Mati! Auto respawn...", Color3.fromRGB(255, 100, 100))
+                log("Mati! Auto respawn...", Color3.fromRGB(255, 100, 100))
                 task.wait(3)
                 
                 if CONFIG.AUTO_RESPAWN then
@@ -317,14 +303,13 @@ local function setupAntiDeath()
                     task.wait(2)
                     updateCharacterRefs()
                     
-                    -- Balik ke posisi terakhir
                     if lastFarmPosition and humanoidRootPart then
                         pcall(function()
                             humanoidRootPart.CFrame = lastFarmPosition
                         end)
                     end
                     
-                    log("✓ Respawned!", Color3.fromRGB(0, 255, 100))
+                    log("Respawned!", Color3.fromRGB(0, 255, 100))
                 end
             end)
         end)
@@ -332,14 +317,14 @@ local function setupAntiDeath()
 end
 
 -- ============================================================
--- START AUTOFARM (FAST)
+-- START / STOP AUTOFARM
 -- ============================================================
 local function startAutoFarm()
     if isRunning then return end
     isRunning = true
     stats.startTime = tick()
     
-    log("⚡ AUTOFARM STARTED (FAST MODE)", Color3.fromRGB(0, 255, 100))
+    log("AUTOFARM STARTED (FAST MODE)", Color3.fromRGB(0, 255, 100))
     
     setupAntiDeath()
     
@@ -352,7 +337,6 @@ local function startAutoFarm()
                 setupAntiDeath()
             end
             
-            -- Simpen posisi buat anti-death
             if humanoidRootPart and humanoidRootPart.Parent then
                 lastFarmPosition = humanoidRootPart.CFrame
             end
@@ -361,11 +345,8 @@ local function startAutoFarm()
             
             if #npcs > 0 then
                 emptyCount = 0
-                
-                -- AMBIL TARGET PALING DEKET
                 currentTarget = npcs[1]
                 
-                -- LOCK + ATTACK (seamless)
                 lockToNPC(currentTarget)
                 
                 local targetKilled = false
@@ -376,11 +357,9 @@ local function startAutoFarm()
                     and isRunning 
                     and tick() < killTimeout do
                     
-                    -- Lock + attack dalam 1 iterasi
                     lockToNPC(currentTarget)
                     attackNPC(currentTarget)
                     
-                    -- Cek target ilang (auto-next-target INSTAN)
                     if not currentTarget.model or not currentTarget.model.Parent then
                         targetKilled = true
                         break
@@ -398,8 +377,6 @@ local function startAutoFarm()
                     stats.kills = stats.kills + 1
                     stats.lastKillTime = tick()
                 end
-                
-                -- LANGSUNG LOOP KE TARGET BARU (seamless)
             else
                 emptyCount = emptyCount + 1
                 if emptyCount % 20 == 0 then
@@ -417,11 +394,11 @@ local function stopAutoFarm()
     isRunning = false
     currentTarget = nil
     cachedTool = nil
-    log("⏸ Autofarm Stopped.", Color3.fromRGB(255, 100, 100))
+    log("Autofarm Stopped.", Color3.fromRGB(255, 100, 100))
 end
 
 -- ============================================================
--- PLANT COLLECTOR (STEALTH)
+-- PLANT COLLECTOR
 -- ============================================================
 local function isPlantName(name)
     local nameLower = string.lower(name)
@@ -497,7 +474,7 @@ local function collectAllPlantsStealth()
         return 0, {}
     end
     
-    log("🌿 Found " .. #plants .. " plants", Color3.fromRGB(150, 255, 100))
+    log("Found " .. #plants .. " plants", Color3.fromRGB(150, 255, 100))
     
     for i, plant in ipairs(plants) do
         if not isCollectingPlants then break end
@@ -554,7 +531,7 @@ end
 local function startPlantCollector()
     if isCollectingPlants then return end
     isCollectingPlants = true
-    log("🌿 Plant Collector STARTED", Color3.fromRGB(150, 255, 100))
+    log("Plant Collector STARTED", Color3.fromRGB(150, 255, 100))
     
     task.spawn(function()
         while isCollectingPlants do
@@ -563,16 +540,16 @@ local function startPlantCollector()
             if count > 0 then
                 stats.collectedPlants = stats.collectedPlants + count
                 if PlantCountLabel then
-                    PlantCountLabel.Text = "🌿 Collected: " .. stats.collectedPlants
+                    PlantCountLabel.Text = "Plants: " .. stats.collectedPlants
                 end
                 
                 local typeStr = ""
                 for t, c in pairs(types) do
                     typeStr = typeStr .. t .. "(" .. c .. ") "
                 end
-                log("✓ " .. count .. ": " .. typeStr, Color3.fromRGB(100, 255, 150))
+                log("Collected " .. count .. ": " .. typeStr, Color3.fromRGB(100, 255, 150))
             else
-                log("🌿 Gak ada plant", Color3.fromRGB(255, 200, 100))
+                log("No plants found", Color3.fromRGB(255, 200, 100))
             end
             
             task.wait(CONFIG.PLANT_SCAN_DELAY)
@@ -582,11 +559,11 @@ end
 
 local function stopPlantCollector()
     isCollectingPlants = false
-    log("🌿 Plant Collector STOPPED", Color3.fromRGB(255, 150, 100))
+    log("Plant Collector STOPPED", Color3.fromRGB(255, 150, 100))
 end
 
 -- ============================================================
--- GUI - RAPI STRUCTURED
+-- GUI - HORIZONTAL LAYOUT
 -- ============================================================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "AutofarmGUI"
@@ -594,81 +571,85 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = player:WaitForChild("PlayerGui")
 
--- ═══ MAIN FRAME ═══
+-- MAIN FRAME (LEBAR KE SAMPING)
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 280, 0, 510)
-MainFrame.Position = UDim2.new(0, 20, 0, 60)
-MainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 28)
+MainFrame.Size = UDim2.new(0, 720, 0, 280)
+MainFrame.Position = UDim2.new(0.5, -360, 0.5, -140)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
 MainFrame.Visible = true
 MainFrame.Parent = ScreenGui
 
 local MainCorner = Instance.new("UICorner")
-MainCorner.CornerRadius = UDim.new(0, 12)
+MainCorner.CornerRadius = UDim.new(0, 10)
 MainCorner.Parent = MainFrame
 
 local MainStroke = Instance.new("UIStroke")
-MainStroke.Color = Color3.fromRGB(50, 50, 75)
+MainStroke.Color = Color3.fromRGB(40, 40, 55)
 MainStroke.Thickness = 1
 MainStroke.Parent = MainFrame
 
--- ═══ TITLE BAR ═══
+-- TITLE BAR
 local TitleBar = Instance.new("Frame")
-TitleBar.Size = UDim2.new(1, 0, 0, 38)
-TitleBar.BackgroundColor3 = Color3.fromRGB(28, 28, 42)
+TitleBar.Size = UDim2.new(1, 0, 0, 35)
+TitleBar.BackgroundColor3 = Color3.fromRGB(22, 22, 32)
 TitleBar.BorderSizePixel = 0
 TitleBar.Active = true
 TitleBar.Parent = MainFrame
 
 local TitleBarCorner = Instance.new("UICorner")
-TitleBarCorner.CornerRadius = UDim.new(0, 12)
+TitleBarCorner.CornerRadius = UDim.new(0, 10)
 TitleBarCorner.Parent = TitleBar
 
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -80, 1, 0)
 Title.Position = UDim2.new(0, 12, 0, 0)
 Title.BackgroundTransparency = 1
-Title.TextColor3 = Color3.fromRGB(0, 255, 150)
-Title.Text = "⚡ AUTOFARM v5.0"
-Title.TextSize = 14
+Title.TextColor3 = Color3.fromRGB(0, 220, 130)
+Title.Text = "AUTOFARM v5.1 - Script Created by ADIEL"
+Title.TextSize = 13
 Title.Font = Enum.Font.GothamBold
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = TitleBar
 
 local MinBtn = Instance.new("TextButton")
-MinBtn.Size = UDim2.new(0, 28, 0, 28)
-MinBtn.Position = UDim2.new(1, -62, 0, 5)
-MinBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 85)
+MinBtn.Size = UDim2.new(0, 26, 0, 26)
+MinBtn.Position = UDim2.new(1, -60, 0, 4)
+MinBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
 MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-MinBtn.Text = "—"
+MinBtn.Text = "_"
 MinBtn.TextSize = 14
 MinBtn.Font = Enum.Font.GothamBold
 MinBtn.Parent = TitleBar
 
 local MinCorner = Instance.new("UICorner")
-MinCorner.CornerRadius = UDim.new(0, 6)
+MinCorner.CornerRadius = UDim.new(0, 5)
 MinCorner.Parent = MinBtn
 
 local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size = UDim2.new(0, 28, 0, 28)
-CloseBtn.Position = UDim2.new(1, -30, 0, 5)
-CloseBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+CloseBtn.Size = UDim2.new(0, 26, 0, 26)
+CloseBtn.Position = UDim2.new(1, -30, 0, 4)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
 CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-CloseBtn.Text = "×"
-CloseBtn.TextSize = 16
+CloseBtn.Text = "X"
+CloseBtn.TextSize = 13
 CloseBtn.Font = Enum.Font.GothamBold
 CloseBtn.Parent = TitleBar
 
 local CloseCorner = Instance.new("UICorner")
-CloseCorner.CornerRadius = UDim.new(0, 6)
+CloseCorner.CornerRadius = UDim.new(0, 5)
 CloseCorner.Parent = CloseBtn
 
--- ═══ STATS SECTION ═══
+-- ═══════════════════════════════════════════
+-- 3 COLUMNS LAYOUT
+-- ═══════════════════════════════════════════
+
+-- ═══ COLUMN 1: STATS (LEFT) ═══
 local StatsFrame = Instance.new("Frame")
-StatsFrame.Size = UDim2.new(1, -20, 0, 70)
-StatsFrame.Position = UDim2.new(0, 10, 0, 48)
-StatsFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 36)
+StatsFrame.Size = UDim2.new(0, 220, 1, -50)
+StatsFrame.Position = UDim2.new(0, 12, 0, 42)
+StatsFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
 StatsFrame.BorderSizePixel = 0
 StatsFrame.Parent = MainFrame
 
@@ -676,59 +657,77 @@ local StatsCorner = Instance.new("UICorner")
 StatsCorner.CornerRadius = UDim.new(0, 8)
 StatsCorner.Parent = StatsFrame
 
--- Kills Counter
+local StatsTitle = Instance.new("TextLabel")
+StatsTitle.Size = UDim2.new(1, -16, 0, 20)
+StatsTitle.Position = UDim2.new(0, 8, 0, 8)
+StatsTitle.BackgroundTransparency = 1
+StatsTitle.TextColor3 = Color3.fromRGB(0, 200, 255)
+StatsTitle.Text = "STATISTIK"
+StatsTitle.TextSize = 11
+StatsTitle.Font = Enum.Font.GothamBold
+StatsTitle.TextXAlignment = Enum.TextXAlignment.Left
+StatsTitle.Parent = StatsFrame
+
 local KillsLabel = Instance.new("TextLabel")
-KillsLabel.Size = UDim2.new(0.5, -8, 0, 25)
-KillsLabel.Position = UDim2.new(0, 8, 0, 5)
+KillsLabel.Size = UDim2.new(1, -16, 0, 22)
+KillsLabel.Position = UDim2.new(0, 8, 0, 32)
 KillsLabel.BackgroundTransparency = 1
-KillsLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
-KillsLabel.Text = "⚔ Kills: 0"
-KillsLabel.TextSize = 12
+KillsLabel.TextColor3 = Color3.fromRGB(0, 220, 130)
+KillsLabel.Text = "Kills: 0"
+KillsLabel.TextSize = 13
 KillsLabel.Font = Enum.Font.GothamBold
 KillsLabel.TextXAlignment = Enum.TextXAlignment.Left
 KillsLabel.Parent = StatsFrame
 
--- Kills/menit
 local KPM = Instance.new("TextLabel")
-KPM.Size = UDim2.new(0.5, -8, 0, 25)
-KPM.Position = UDim2.new(0.5, 0, 0, 5)
+KPM.Size = UDim2.new(1, -16, 0, 20)
+KPM.Position = UDim2.new(0, 8, 0, 56)
 KPM.BackgroundTransparency = 1
-KPM.TextColor3 = Color3.fromRGB(255, 200, 100)
-KPM.Text = "📊 0 KPM"
+KPM.TextColor3 = Color3.fromRGB(255, 180, 80)
+KPM.Text = "KPM: 0"
 KPM.TextSize = 12
 KPM.Font = Enum.Font.GothamBold
-KPM.TextXAlignment = Enum.TextXAlignment.Right
+KPM.TextXAlignment = Enum.TextXAlignment.Left
 KPM.Parent = StatsFrame
 
--- NPC Count
 local CountLabel = Instance.new("TextLabel")
-CountLabel.Size = UDim2.new(0.5, -8, 0, 20)
-CountLabel.Position = UDim2.new(0, 8, 0, 28)
+CountLabel.Size = UDim2.new(1, -16, 0, 18)
+CountLabel.Position = UDim2.new(0, 8, 0, 80)
 CountLabel.BackgroundTransparency = 1
-CountLabel.TextColor3 = Color3.fromRGB(150, 150, 200)
-CountLabel.Text = "NPC: 0"
-CountLabel.TextSize = 10
+CountLabel.TextColor3 = Color3.fromRGB(140, 140, 180)
+CountLabel.Text = "NPC Detected: 0"
+CountLabel.TextSize = 11
 CountLabel.Font = Enum.Font.Gotham
 CountLabel.TextXAlignment = Enum.TextXAlignment.Left
 CountLabel.Parent = StatsFrame
 
--- Plant Count
 local PlantCountLabel = Instance.new("TextLabel")
-PlantCountLabel.Size = UDim2.new(0.5, -8, 0, 20)
-PlantCountLabel.Position = UDim2.new(0.5, 0, 0, 28)
+PlantCountLabel.Size = UDim2.new(1, -16, 0, 18)
+PlantCountLabel.Position = UDim2.new(0, 8, 0, 100)
 PlantCountLabel.BackgroundTransparency = 1
-PlantCountLabel.TextColor3 = Color3.fromRGB(150, 255, 100)
-PlantCountLabel.Text = "🌿 0 plants"
-PlantCountLabel.TextSize = 10
+PlantCountLabel.TextColor3 = Color3.fromRGB(140, 220, 140)
+PlantCountLabel.Text = "Plants Collected: 0"
+PlantCountLabel.TextSize = 11
 PlantCountLabel.Font = Enum.Font.Gotham
-PlantCountLabel.TextXAlignment = Enum.TextXAlignment.Right
+PlantCountLabel.TextXAlignment = Enum.TextXAlignment.Left
 PlantCountLabel.Parent = StatsFrame
 
--- HP Bar Background
+-- HP Bar
+local HPText = Instance.new("TextLabel")
+HPText.Size = UDim2.new(1, -16, 0, 16)
+HPText.Position = UDim2.new(0, 8, 0, 130)
+HPText.BackgroundTransparency = 1
+HPText.TextColor3 = Color3.fromRGB(140, 140, 180)
+HPText.Text = "HP"
+HPText.TextSize = 11
+HPText.Font = Enum.Font.Gotham
+HPText.TextXAlignment = Enum.TextXAlignment.Left
+HPText.Parent = StatsFrame
+
 local HPBarBG = Instance.new("Frame")
-HPBarBG.Size = UDim2.new(1, -16, 0, 8)
-HPBarBG.Position = UDim2.new(0, 8, 0, 53)
-HPBarBG.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+HPBarBG.Size = UDim2.new(1, -16, 0, 10)
+HPBarBG.Position = UDim2.new(0, 8, 0, 150)
+HPBarBG.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
 HPBarBG.BorderSizePixel = 0
 HPBarBG.Parent = StatsFrame
 
@@ -736,10 +735,9 @@ local HPBarBG_Corner = Instance.new("UICorner")
 HPBarBG_Corner.CornerRadius = UDim.new(1, 0)
 HPBarBG_Corner.Parent = HPBarBG
 
--- HP Bar Fill
 local HPBarFill = Instance.new("Frame")
 HPBarFill.Size = UDim2.new(1, 0, 1, 0)
-HPBarFill.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+HPBarFill.BackgroundColor3 = Color3.fromRGB(0, 220, 100)
 HPBarFill.BorderSizePixel = 0
 HPBarFill.Parent = HPBarBG
 
@@ -747,212 +745,196 @@ local HPBarFill_Corner = Instance.new("UICorner")
 HPBarFill_Corner.CornerRadius = UDim.new(1, 0)
 HPBarFill_Corner.Parent = HPBarFill
 
--- ═══ SECTION: AUTOFARM ═══
-local FarmSection = Instance.new("Frame")
-FarmSection.Size = UDim2.new(1, -20, 0, 130)
-FarmSection.Position = UDim2.new(0, 10, 0, 128)
-FarmSection.BackgroundColor3 = Color3.fromRGB(24, 24, 36)
-FarmSection.BorderSizePixel = 0
-FarmSection.Parent = MainFrame
+-- Status
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Size = UDim2.new(1, -16, 0, 40)
+StatusLabel.Position = UDim2.new(0, 8, 0, 175)
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+StatusLabel.Text = "Farm: IDLE\nPlant: IDLE"
+StatusLabel.TextSize = 10
+StatusLabel.Font = Enum.Font.Gotham
+StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+StatusLabel.TextYAlignment = Enum.TextYAlignment.Top
+StatusLabel.TextWrapped = true
+StatusLabel.Parent = StatsFrame
 
-local FarmSectionCorner = Instance.new("UICorner")
-FarmSectionCorner.CornerRadius = UDim.new(0, 8)
-FarmSectionCorner.Parent = FarmSection
+-- ═══ COLUMN 2: AUTOFARM (CENTER) ═══
+local FarmFrame = Instance.new("Frame")
+FarmFrame.Size = UDim2.new(0, 220, 1, -50)
+FarmFrame.Position = UDim2.new(0, 244, 0, 42)
+FarmFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
+FarmFrame.BorderSizePixel = 0
+FarmFrame.Parent = MainFrame
+
+local FarmCorner = Instance.new("UICorner")
+FarmCorner.CornerRadius = UDim.new(0, 8)
+FarmCorner.Parent = FarmFrame
 
 local FarmTitle = Instance.new("TextLabel")
-FarmTitle.Size = UDim2.new(1, -12, 0, 18)
-FarmTitle.Position = UDim2.new(0, 8, 0, 5)
+FarmTitle.Size = UDim2.new(1, -16, 0, 20)
+FarmTitle.Position = UDim2.new(0, 8, 0, 8)
 FarmTitle.BackgroundTransparency = 1
 FarmTitle.TextColor3 = Color3.fromRGB(0, 200, 255)
-FarmTitle.Text = "⚔ AUTOFARM (Fast Mode)"
-FarmTitle.TextSize = 10
+FarmTitle.Text = "AUTOFARM"
+FarmTitle.TextSize = 11
 FarmTitle.Font = Enum.Font.GothamBold
 FarmTitle.TextXAlignment = Enum.TextXAlignment.Left
-FarmTitle.Parent = FarmSection
+FarmTitle.Parent = FarmFrame
 
 local ToggleButton = Instance.new("TextButton")
-ToggleButton.Size = UDim2.new(1, -16, 0, 38)
-ToggleButton.Position = UDim2.new(0, 8, 0, 25)
-ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+ToggleButton.Size = UDim2.new(1, -16, 0, 40)
+ToggleButton.Position = UDim2.new(0, 8, 0, 32)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 160, 0)
 ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleButton.Text = "▶ START AUTOFARM"
+ToggleButton.Text = "START AUTOFARM"
 ToggleButton.TextSize = 13
 ToggleButton.Font = Enum.Font.GothamBold
-ToggleButton.Parent = FarmSection
+ToggleButton.Parent = FarmFrame
 
 local ToggleCorner = Instance.new("UICorner")
 ToggleCorner.CornerRadius = UDim.new(0, 6)
 ToggleCorner.Parent = ToggleButton
 
 local TeleportBtn = Instance.new("TextButton")
-TeleportBtn.Size = UDim2.new(0.5, -10, 0, 28)
-TeleportBtn.Position = UDim2.new(0, 8, 0, 68)
-TeleportBtn.BackgroundColor3 = Color3.fromRGB(0, 130, 200)
+TeleportBtn.Size = UDim2.new(1, -16, 0, 32)
+TeleportBtn.Position = UDim2.new(0, 8, 0, 80)
+TeleportBtn.BackgroundColor3 = Color3.fromRGB(0, 110, 180)
 TeleportBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-TeleportBtn.Text = "⚡ TELEPORT KE MOB"
-TeleportBtn.TextSize = 10
+TeleportBtn.Text = "TELEPORT KE MOB"
+TeleportBtn.TextSize = 12
 TeleportBtn.Font = Enum.Font.GothamBold
-TeleportBtn.Parent = FarmSection
+TeleportBtn.Parent = FarmFrame
 
 local TeleCorner = Instance.new("UICorner")
-TeleCorner.CornerRadius = UDim.new(0, 5)
+TeleCorner.CornerRadius = UDim.new(0, 6)
 TeleCorner.Parent = TeleportBtn
 
 local ListBtn = Instance.new("TextButton")
-ListBtn.Size = UDim2.new(0.5, -10, 0, 28)
-ListBtn.Position = UDim2.new(0.5, 2, 0, 68)
-ListBtn.BackgroundColor3 = Color3.fromRGB(100, 60, 130)
+ListBtn.Size = UDim2.new(1, -16, 0, 32)
+ListBtn.Position = UDim2.new(0, 8, 0, 120)
+ListBtn.BackgroundColor3 = Color3.fromRGB(90, 50, 120)
 ListBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-ListBtn.Text = "📋 LIST NPC"
-ListBtn.TextSize = 10
+ListBtn.Text = "LIST NPC TARGET"
+ListBtn.TextSize = 12
 ListBtn.Font = Enum.Font.GothamBold
-ListBtn.Parent = FarmSection
+ListBtn.Parent = FarmFrame
 
 local ListCorner = Instance.new("UICorner")
-ListCorner.CornerRadius = UDim.new(0, 5)
+ListCorner.CornerRadius = UDim.new(0, 6)
 ListCorner.Parent = ListBtn
 
-local NPCListLabel = Instance.new("TextLabel")
-NPCListLabel.Size = UDim2.new(1, -16, 0, 20)
-NPCListLabel.Position = UDim2.new(0, 8, 0, 102)
-NPCListLabel.BackgroundTransparency = 1
-NPCListLabel.TextColor3 = Color3.fromRGB(120, 120, 160)
-NPCListLabel.Text = "Scorpion • Tombguardian • Water Serpent"
-NPCListLabel.TextSize = 9
-NPCListLabel.Font = Enum.Font.Gotham
-NPCListLabel.TextXAlignment = Enum.TextXAlignment.Left
-NPCListLabel.Parent = FarmSection
+local RescanBtn = Instance.new("TextButton")
+RescanBtn.Size = UDim2.new(1, -16, 0, 32)
+RescanBtn.Position = UDim2.new(0, 8, 0, 160)
+RescanBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 70)
+RescanBtn.TextColor3 = Color3.fromRGB(200, 200, 255)
+RescanBtn.Text = "RESCAN NPC"
+RescanBtn.TextSize = 12
+RescanBtn.Font = Enum.Font.GothamBold
+RescanBtn.Parent = FarmFrame
 
--- ═══ SECTION: PLANT ═══
-local PlantSection = Instance.new("Frame")
-PlantSection.Size = UDim2.new(1, -20, 0, 130)
-PlantSection.Position = UDim2.new(0, 10, 0, 266)
-PlantSection.BackgroundColor3 = Color3.fromRGB(24, 24, 36)
-PlantSection.BorderSizePixel = 0
-PlantSection.Parent = MainFrame
+local RescanCorner = Instance.new("UICorner")
+RescanCorner.CornerRadius = UDim.new(0, 6)
+RescanCorner.Parent = RescanBtn
 
-local PlantSectionCorner = Instance.new("UICorner")
-PlantSectionCorner.CornerRadius = UDim.new(0, 8)
-PlantSectionCorner.Parent = PlantSection
+local ConsoleBtn = Instance.new("TextButton")
+ConsoleBtn.Size = UDim2.new(1, -16, 0, 32)
+ConsoleBtn.Position = UDim2.new(0, 8, 0, 200)
+ConsoleBtn.BackgroundColor3 = Color3.fromRGB(35, 60, 35)
+ConsoleBtn.TextColor3 = Color3.fromRGB(150, 220, 150)
+ConsoleBtn.Text = "OPEN CONSOLE"
+ConsoleBtn.TextSize = 12
+ConsoleBtn.Font = Enum.Font.GothamBold
+ConsoleBtn.Parent = FarmFrame
+
+local ConsoleCorner = Instance.new("UICorner")
+ConsoleCorner.CornerRadius = UDim.new(0, 6)
+ConsoleCorner.Parent = ConsoleBtn
+
+-- ═══ COLUMN 3: PLANT (RIGHT) ═══
+local PlantFrame = Instance.new("Frame")
+PlantFrame.Size = UDim2.new(0, 220, 1, -50)
+PlantFrame.Position = UDim2.new(0, 476, 0, 42)
+PlantFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
+PlantFrame.BorderSizePixel = 0
+PlantFrame.Parent = MainFrame
+
+local PlantCorner = Instance.new("UICorner")
+PlantCorner.CornerRadius = UDim.new(0, 8)
+PlantCorner.Parent = PlantFrame
 
 local PlantTitle = Instance.new("TextLabel")
-PlantTitle.Size = UDim2.new(1, -12, 0, 18)
-PlantTitle.Position = UDim2.new(0, 8, 0, 5)
+PlantTitle.Size = UDim2.new(1, -16, 0, 20)
+PlantTitle.Position = UDim2.new(0, 8, 0, 8)
 PlantTitle.BackgroundTransparency = 1
-PlantTitle.TextColor3 = Color3.fromRGB(150, 255, 100)
-PlantTitle.Text = "🌿 PLANT COLLECTOR"
-PlantTitle.TextSize = 10
+PlantTitle.TextColor3 = Color3.fromRGB(150, 220, 100)
+PlantTitle.Text = "PLANT COLLECTOR"
+PlantTitle.TextSize = 11
 PlantTitle.Font = Enum.Font.GothamBold
 PlantTitle.TextXAlignment = Enum.TextXAlignment.Left
-PlantTitle.Parent = PlantSection
+PlantTitle.Parent = PlantFrame
 
 local PlantToggleBtn = Instance.new("TextButton")
-PlantToggleBtn.Size = UDim2.new(1, -16, 0, 38)
-PlantToggleBtn.Position = UDim2.new(0, 8, 0, 25)
-PlantToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 80)
+PlantToggleBtn.Size = UDim2.new(1, -16, 0, 40)
+PlantToggleBtn.Position = UDim2.new(0, 8, 0, 32)
+PlantToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 130, 70)
 PlantToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-PlantToggleBtn.Text = "🌿 START PLANT COLLECTOR"
-PlantToggleBtn.TextSize = 13
+PlantToggleBtn.Text = "START PLANT COLLECTOR"
+PlantToggleBtn.TextSize = 12
 PlantToggleBtn.Font = Enum.Font.GothamBold
-PlantToggleBtn.Parent = PlantSection
+PlantToggleBtn.Parent = PlantFrame
 
 local PlantToggleCorner = Instance.new("UICorner")
 PlantToggleCorner.CornerRadius = UDim.new(0, 6)
 PlantToggleCorner.Parent = PlantToggleBtn
 
 local InstantCollectBtn = Instance.new("TextButton")
-InstantCollectBtn.Size = UDim2.new(1, -16, 0, 28)
-InstantCollectBtn.Position = UDim2.new(0, 8, 0, 68)
-InstantCollectBtn.BackgroundColor3 = Color3.fromRGB(80, 180, 60)
+InstantCollectBtn.Size = UDim2.new(1, -16, 0, 32)
+InstantCollectBtn.Position = UDim2.new(0, 8, 0, 80)
+InstantCollectBtn.BackgroundColor3 = Color3.fromRGB(70, 160, 50)
 InstantCollectBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-InstantCollectBtn.Text = "⚡ COLLECT SEKARANG"
-InstantCollectBtn.TextSize = 10
+InstantCollectBtn.Text = "COLLECT SEKARANG"
+InstantCollectBtn.TextSize = 12
 InstantCollectBtn.Font = Enum.Font.GothamBold
-InstantCollectBtn.Parent = PlantSection
+InstantCollectBtn.Parent = PlantFrame
 
 local InstCorner = Instance.new("UICorner")
-InstCorner.CornerRadius = UDim.new(0, 5)
+InstCorner.CornerRadius = UDim.new(0, 6)
 InstCorner.Parent = InstantCollectBtn
 
-local PlantListLabel = Instance.new("TextLabel")
-PlantListLabel.Size = UDim2.new(1, -16, 0, 20)
-PlantListLabel.Position = UDim2.new(0, 8, 0, 102)
-PlantListLabel.BackgroundTransparency = 1
-PlantListLabel.TextColor3 = Color3.fromRGB(120, 160, 120)
-PlantListLabel.Text = "Ginseng • Spirit Grass"
-PlantListLabel.TextSize = 9
-PlantListLabel.Font = Enum.Font.Gotham
-PlantListLabel.TextXAlignment = Enum.TextXAlignment.Left
-PlantListLabel.Parent = PlantSection
+local PlantInfo = Instance.new("TextLabel")
+PlantInfo.Size = UDim2.new(1, -16, 0, 80)
+PlantInfo.Position = UDim2.new(0, 8, 0, 120)
+PlantInfo.BackgroundTransparency = 1
+PlantInfo.TextColor3 = Color3.fromRGB(140, 140, 180)
+PlantInfo.Text = "Plants:\nGinseng\nSpirit Grass"
+PlantInfo.TextSize = 11
+PlantInfo.Font = Enum.Font.Gotham
+PlantInfo.TextXAlignment = Enum.TextXAlignment.Left
+PlantInfo.TextYAlignment = Enum.TextYAlignment.Top
+PlantInfo.TextWrapped = true
+PlantInfo.Parent = PlantFrame
 
--- ═══ SECTION: STATUS ═══
-local StatusSection = Instance.new("Frame")
-StatusSection.Size = UDim2.new(1, -20, 0, 55)
-StatusSection.Position = UDim2.new(0, 10, 0, 404)
-StatusSection.BackgroundColor3 = Color3.fromRGB(24, 24, 36)
-StatusSection.BorderSizePixel = 0
-StatusSection.Parent = MainFrame
-
-local StatusSectionCorner = Instance.new("UICorner")
-StatusSectionCorner.CornerRadius = UDim.new(0, 8)
-StatusSectionCorner.Parent = StatusSection
-
-local StatusLabel = Instance.new("TextLabel")
-StatusLabel.Size = UDim2.new(1, -16, 0, 18)
-StatusLabel.Position = UDim2.new(0, 8, 0, 5)
-StatusLabel.BackgroundTransparency = 1
-StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-StatusLabel.Text = "Farm: IDLE | Plant: IDLE"
-StatusLabel.TextSize = 10
-StatusLabel.Font = Enum.Font.Gotham
-StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
-StatusLabel.Parent = StatusSection
-
-local RescanBtn = Instance.new("TextButton")
-RescanBtn.Size = UDim2.new(0.5, -10, 0, 24)
-RescanBtn.Position = UDim2.new(0, 8, 0, 26)
-RescanBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 80)
-RescanBtn.TextColor3 = Color3.fromRGB(200, 200, 255)
-RescanBtn.Text = "🔄 RESCAN"
-RescanBtn.TextSize = 10
-RescanBtn.Font = Enum.Font.GothamBold
-RescanBtn.Parent = StatusSection
-
-local RescanCorner = Instance.new("UICorner")
-RescanCorner.CornerRadius = UDim.new(0, 5)
-RescanCorner.Parent = RescanBtn
-
-local ConsoleBtn = Instance.new("TextButton")
-ConsoleBtn.Size = UDim2.new(0.5, -10, 0, 24)
-ConsoleBtn.Position = UDim2.new(0.5, 2, 0, 26)
-ConsoleBtn.BackgroundColor3 = Color3.fromRGB(40, 70, 40)
-ConsoleBtn.TextColor3 = Color3.fromRGB(150, 255, 150)
-ConsoleBtn.Text = "📋 CONSOLE"
-ConsoleBtn.TextSize = 10
-ConsoleBtn.Font = Enum.Font.GothamBold
-ConsoleBtn.Parent = StatusSection
-
-local ConsoleCorner = Instance.new("UICorner")
-ConsoleCorner.CornerRadius = UDim.new(0, 5)
-ConsoleCorner.Parent = ConsoleBtn
-
--- ═══ FOOTER ═══
-local Credit = Instance.new("TextLabel")
-Credit.Size = UDim2.new(1, 0, 0, 18)
-Credit.Position = UDim2.new(0, 0, 1, -18)
-Credit.BackgroundTransparency = 1
-Credit.TextColor3 = Color3.fromRGB(70, 70, 100)
-Credit.Text = "⚡ v5.0 Fast Farm • by Kyriel"
-Credit.TextSize = 9
-Credit.Font = Enum.Font.Gotham
-Credit.Parent = MainFrame
+local NPCInfo = Instance.new("TextLabel")
+NPCInfo.Size = UDim2.new(1, -16, 0, 60)
+NPCInfo.Position = UDim2.new(0, 8, 0, 200)
+NPCInfo.BackgroundTransparency = 1
+NPCInfo.TextColor3 = Color3.fromRGB(140, 140, 180)
+NPCInfo.Text = "NPC:\nScorpion, Tombguardian,\nWater Serpent"
+NPCInfo.TextSize = 10
+NPCInfo.Font = Enum.Font.Gotham
+NPCInfo.TextXAlignment = Enum.TextXAlignment.Left
+NPCInfo.TextYAlignment = Enum.TextYAlignment.Top
+NPCInfo.TextWrapped = true
+NPCInfo.Parent = PlantFrame
 
 -- ============================================================
 -- CONSOLE POPUP
 -- ============================================================
 ConsolePopup = Instance.new("Frame")
-ConsolePopup.Size = UDim2.new(0, 340, 0, 280)
-ConsolePopup.Position = UDim2.new(0.5, -170, 0.5, -140)
+ConsolePopup.Size = UDim2.new(0, 340, 0, 260)
+ConsolePopup.Position = UDim2.new(0.5, -170, 0.5, -130)
 ConsolePopup.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
 ConsolePopup.BorderSizePixel = 0
 ConsolePopup.Visible = false
@@ -966,7 +948,7 @@ ConsolePopupCorner.Parent = ConsolePopup
 
 local ConsoleTitle = Instance.new("Frame")
 ConsoleTitle.Size = UDim2.new(1, 0, 0, 30)
-ConsoleTitle.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+ConsoleTitle.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
 ConsoleTitle.BorderSizePixel = 0
 ConsoleTitle.ZIndex = 21
 ConsoleTitle.Active = true
@@ -980,8 +962,8 @@ local ConsoleTitleLabel = Instance.new("TextLabel")
 ConsoleTitleLabel.Size = UDim2.new(1, -100, 1, 0)
 ConsoleTitleLabel.Position = UDim2.new(0, 10, 0, 0)
 ConsoleTitleLabel.BackgroundTransparency = 1
-ConsoleTitleLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
-ConsoleTitleLabel.Text = "📋 CONSOLE"
+ConsoleTitleLabel.TextColor3 = Color3.fromRGB(0, 220, 130)
+ConsoleTitleLabel.Text = "CONSOLE"
 ConsoleTitleLabel.TextSize = 12
 ConsoleTitleLabel.Font = Enum.Font.GothamBold
 ConsoleTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -991,7 +973,7 @@ ConsoleTitleLabel.Parent = ConsoleTitle
 local ClearBtn = Instance.new("TextButton")
 ClearBtn.Size = UDim2.new(0, 50, 0, 22)
 ClearBtn.Position = UDim2.new(1, -85, 0, 4)
-ClearBtn.BackgroundColor3 = Color3.fromRGB(80, 50, 50)
+ClearBtn.BackgroundColor3 = Color3.fromRGB(70, 45, 45)
 ClearBtn.TextColor3 = Color3.fromRGB(255, 200, 200)
 ClearBtn.Text = "CLEAR"
 ClearBtn.TextSize = 10
@@ -1006,10 +988,10 @@ ClearCorner.Parent = ClearBtn
 local ConsoleClose = Instance.new("TextButton")
 ConsoleClose.Size = UDim2.new(0, 25, 0, 22)
 ConsoleClose.Position = UDim2.new(1, -28, 0, 4)
-ConsoleClose.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+ConsoleClose.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
 ConsoleClose.TextColor3 = Color3.fromRGB(255, 255, 255)
-ConsoleClose.Text = "×"
-ConsoleClose.TextSize = 14
+ConsoleClose.Text = "X"
+ConsoleClose.TextSize = 12
 ConsoleClose.Font = Enum.Font.GothamBold
 ConsoleClose.ZIndex = 22
 ConsoleClose.Parent = ConsoleTitle
@@ -1036,8 +1018,8 @@ LogList.Parent = LogScroll
 -- NPC LIST POPUP
 -- ============================================================
 local ListPopup = Instance.new("Frame")
-ListPopup.Size = UDim2.new(0, 280, 0, 300)
-ListPopup.Position = UDim2.new(0.5, -140, 0.5, -150)
+ListPopup.Size = UDim2.new(0, 280, 0, 280)
+ListPopup.Position = UDim2.new(0.5, -140, 0.5, -140)
 ListPopup.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
 ListPopup.BorderSizePixel = 0
 ListPopup.Visible = false
@@ -1051,7 +1033,7 @@ ListPopupCorner.Parent = ListPopup
 
 local ListTitle = Instance.new("Frame")
 ListTitle.Size = UDim2.new(1, 0, 0, 30)
-ListTitle.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+ListTitle.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
 ListTitle.BorderSizePixel = 0
 ListTitle.ZIndex = 21
 ListTitle.Active = true
@@ -1065,8 +1047,8 @@ local ListTitleLabel = Instance.new("TextLabel")
 ListTitleLabel.Size = UDim2.new(1, -40, 1, 0)
 ListTitleLabel.Position = UDim2.new(0, 10, 0, 0)
 ListTitleLabel.BackgroundTransparency = 1
-ListTitleLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
-ListTitleLabel.Text = "🎯 NPC TARGET (TAP TELEPORT)"
+ListTitleLabel.TextColor3 = Color3.fromRGB(0, 220, 130)
+ListTitleLabel.Text = "NPC TARGET - TAP TO TELEPORT"
 ListTitleLabel.TextSize = 11
 ListTitleLabel.Font = Enum.Font.GothamBold
 ListTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -1076,10 +1058,10 @@ ListTitleLabel.Parent = ListTitle
 local ListClose = Instance.new("TextButton")
 ListClose.Size = UDim2.new(0, 25, 0, 22)
 ListClose.Position = UDim2.new(1, -28, 0, 4)
-ListClose.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+ListClose.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
 ListClose.TextColor3 = Color3.fromRGB(255, 255, 255)
-ListClose.Text = "×"
-ListClose.TextSize = 14
+ListClose.Text = "X"
+ListClose.TextSize = 12
 ListClose.Font = Enum.Font.GothamBold
 ListClose.ZIndex = 22
 ListClose.Parent = ListTitle
@@ -1116,7 +1098,7 @@ local function refreshNPCList()
         lbl.Size = UDim2.new(1, -6, 0, 20)
         lbl.BackgroundTransparency = 1
         lbl.TextColor3 = Color3.fromRGB(255, 150, 150)
-        lbl.Text = "❌ Gak ada NPC target"
+        lbl.Text = "No NPC target found"
         lbl.TextSize = 11
         lbl.Font = Enum.Font.Gotham
         lbl.Parent = ListScroll
@@ -1126,8 +1108,8 @@ local function refreshNPCList()
     for i, npc in ipairs(npcs) do
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(1, -6, 0, 28)
-        btn.BackgroundColor3 = Color3.fromRGB(40, 60, 80)
-        btn.TextColor3 = Color3.fromRGB(150, 255, 200)
+        btn.BackgroundColor3 = Color3.fromRGB(35, 50, 70)
+        btn.TextColor3 = Color3.fromRGB(150, 220, 200)
         btn.Text = string.format("%d. %s (HP: %d)", i, npc.model.Name, math.floor(npc.humanoid.Health))
         btn.TextSize = 11
         btn.Font = Enum.Font.Code
@@ -1141,7 +1123,7 @@ local function refreshNPCList()
         btn.MouseButton1Click:Connect(function()
             if npc.model and npc.model.Parent then
                 teleportToNPC(npc)
-                log("⚡ Teleport ke: " .. npc.model.Name, Color3.fromRGB(0, 200, 255))
+                log("Teleport ke: " .. npc.model.Name, Color3.fromRGB(0, 200, 255))
                 ListPopup.Visible = false
             end
         end)
@@ -1155,10 +1137,10 @@ local Bubble = Instance.new("TextButton")
 Bubble.Name = "FloatingBubble"
 Bubble.Size = UDim2.new(0, 50, 0, 50)
 Bubble.Position = UDim2.new(0, 20, 0, 100)
-Bubble.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
+Bubble.BackgroundColor3 = Color3.fromRGB(0, 160, 90)
 Bubble.TextColor3 = Color3.fromRGB(255, 255, 255)
-Bubble.Text = "⚡"
-Bubble.TextSize = 24
+Bubble.Text = "A"
+Bubble.TextSize = 20
 Bubble.Font = Enum.Font.GothamBold
 Bubble.Visible = false
 Bubble.Active = true
@@ -1169,7 +1151,7 @@ BubbleCorner.CornerRadius = UDim.new(1, 0)
 BubbleCorner.Parent = Bubble
 
 local BubbleStroke = Instance.new("UIStroke")
-BubbleStroke.Color = Color3.fromRGB(0, 255, 150)
+BubbleStroke.Color = Color3.fromRGB(0, 220, 130)
 BubbleStroke.Thickness = 2
 BubbleStroke.Parent = Bubble
 
@@ -1222,45 +1204,37 @@ makeDraggable(ListPopup, ListTitle)
 -- ============================================================
 task.spawn(function()
     while task.wait(0.5) do
-        -- Update HP bar
         if humanoid and humanoid.Parent then
             local hpPct = humanoid.Health / humanoid.MaxHealth
             HPBarFill.Size = UDim2.new(math.max(0, hpPct), 0, 1, 0)
             
             if hpPct < 0.3 then
-                HPBarFill.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+                HPBarFill.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
             elseif hpPct < 0.6 then
-                HPBarFill.BackgroundColor3 = Color3.fromRGB(255, 200, 80)
+                HPBarFill.BackgroundColor3 = Color3.fromRGB(220, 180, 60)
             else
-                HPBarFill.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+                HPBarFill.BackgroundColor3 = Color3.fromRGB(0, 220, 100)
             end
         end
         
-        -- Update Kills
-        KillsLabel.Text = "⚔ Kills: " .. stats.kills
+        KillsLabel.Text = "Kills: " .. stats.kills
         
-        -- Update KPM
         if stats.startTime > 0 and isRunning then
             local elapsed = tick() - stats.startTime
             if elapsed > 5 then
                 local kpm = math.floor((stats.kills / elapsed) * 60)
-                KPM.Text = "📊 " .. kpm .. " KPM"
+                KPM.Text = "KPM: " .. kpm
             end
         else
-            KPM.Text = "📊 0 KPM"
+            KPM.Text = "KPM: 0"
         end
     end
 end)
 
 task.spawn(function()
     while task.wait(CONFIG.SCAN_INTERVAL) do
-        if not isRunning then
-            local npcs = getAllNPCs()
-            CountLabel.Text = "NPC: " .. #npcs
-        else
-            local npcs = getAllNPCs()
-            CountLabel.Text = "NPC: " .. #npcs
-        end
+        local npcs = getAllNPCs()
+        CountLabel.Text = "NPC Detected: " .. #npcs
     end
 end)
 
@@ -1270,58 +1244,58 @@ end)
 ToggleButton.MouseButton1Click:Connect(function()
     if isRunning then
         stopAutoFarm()
-        ToggleButton.Text = "▶ START AUTOFARM"
-        ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
-        StatusLabel.Text = "Farm: IDLE | Plant: " .. (isCollectingPlants and "RUNNING" or "IDLE")
+        ToggleButton.Text = "START AUTOFARM"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 160, 0)
+        StatusLabel.Text = "Farm: IDLE\nPlant: " .. (isCollectingPlants and "RUNNING" or "IDLE")
         StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
     else
         startAutoFarm()
-        ToggleButton.Text = "⏸ STOP AUTOFARM"
-        ToggleButton.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
-        StatusLabel.Text = "Farm: LOCKED | Plant: " .. (isCollectingPlants and "RUNNING" or "IDLE")
-        StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
+        ToggleButton.Text = "STOP AUTOFARM"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(160, 0, 0)
+        StatusLabel.Text = "Farm: RUNNING\nPlant: " .. (isCollectingPlants and "RUNNING" or "IDLE")
+        StatusLabel.TextColor3 = Color3.fromRGB(0, 220, 100)
     end
 end)
 
 PlantToggleBtn.MouseButton1Click:Connect(function()
     if isCollectingPlants then
         stopPlantCollector()
-        PlantToggleBtn.Text = "🌿 START PLANT COLLECTOR"
-        PlantToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 80)
-        StatusLabel.Text = "Farm: " .. (isRunning and "LOCKED" or "IDLE") .. " | Plant: IDLE"
+        PlantToggleBtn.Text = "START PLANT COLLECTOR"
+        PlantToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 130, 70)
+        StatusLabel.Text = "Farm: " .. (isRunning and "RUNNING" or "IDLE") .. "\nPlant: IDLE"
     else
         startPlantCollector()
-        PlantToggleBtn.Text = "⏸ STOP PLANT COLLECTOR"
-        PlantToggleBtn.BackgroundColor3 = Color3.fromRGB(140, 70, 0)
-        StatusLabel.Text = "Farm: " .. (isRunning and "LOCKED" or "IDLE") .. " | Plant: RUNNING"
+        PlantToggleBtn.Text = "STOP PLANT COLLECTOR"
+        PlantToggleBtn.BackgroundColor3 = Color3.fromRGB(130, 60, 0)
+        StatusLabel.Text = "Farm: " .. (isRunning and "RUNNING" or "IDLE") .. "\nPlant: RUNNING"
     end
 end)
 
 InstantCollectBtn.MouseButton1Click:Connect(function()
-    InstantCollectBtn.Text = "⚡ COLLECTING..."
+    InstantCollectBtn.Text = "COLLECTING..."
     InstantCollectBtn.BackgroundColor3 = Color3.fromRGB(50, 100, 30)
     
     local count, types = collectAllPlantsStealth()
     stats.collectedPlants = stats.collectedPlants + count
-    PlantCountLabel.Text = "🌿 " .. stats.collectedPlants .. " plants"
+    PlantCountLabel.Text = "Plants Collected: " .. stats.collectedPlants
     
-    InstantCollectBtn.Text = "✓ +" .. count
+    InstantCollectBtn.Text = "+" .. count
     task.wait(1)
-    InstantCollectBtn.Text = "⚡ COLLECT SEKARANG"
-    InstantCollectBtn.BackgroundColor3 = Color3.fromRGB(80, 180, 60)
+    InstantCollectBtn.Text = "COLLECT SEKARANG"
+    InstantCollectBtn.BackgroundColor3 = Color3.fromRGB(70, 160, 50)
 end)
 
 TeleportBtn.MouseButton1Click:Connect(function()
     local npcs = getAllNPCs()
     if #npcs > 0 then
         teleportToNPC(npcs[1])
-        TeleportBtn.Text = "✓ " .. npcs[1].model.Name
+        TeleportBtn.Text = "OK: " .. npcs[1].model.Name
         task.wait(1)
-        TeleportBtn.Text = "⚡ TELEPORT KE MOB"
+        TeleportBtn.Text = "TELEPORT KE MOB"
     else
-        TeleportBtn.Text = "❌ GAK ADA NPC"
+        TeleportBtn.Text = "NO NPC"
         task.wait(1)
-        TeleportBtn.Text = "⚡ TELEPORT KE MOB"
+        TeleportBtn.Text = "TELEPORT KE MOB"
     end
 end)
 
@@ -1335,11 +1309,11 @@ ListClose.MouseButton1Click:Connect(function()
 end)
 
 RescanBtn.MouseButton1Click:Connect(function()
-    RescanBtn.Text = "🔄 SCANNING..."
+    RescanBtn.Text = "SCANNING..."
     task.wait(0.1)
     local npcs = getAllNPCs()
-    CountLabel.Text = "NPC: " .. #npcs
-    RescanBtn.Text = "🔄 RESCAN"
+    CountLabel.Text = "NPC Detected: " .. #npcs
+    RescanBtn.Text = "RESCAN NPC"
 end)
 
 ConsoleBtn.MouseButton1Click:Connect(function()
@@ -1361,11 +1335,11 @@ end)
 
 MinBtn.MouseButton1Click:Connect(function()
     if MainFrame.Size.Y.Offset > 50 then
-        MainFrame.Size = UDim2.new(0, 280, 0, 38)
-        MinBtn.Text = "□"
+        MainFrame.Size = UDim2.new(0, 720, 0, 35)
+        MinBtn.Text = "o"
     else
-        MainFrame.Size = UDim2.new(0, 280, 0, 510)
-        MinBtn.Text = "—"
+        MainFrame.Size = UDim2.new(0, 720, 0, 280)
+        MinBtn.Text = "_"
     end
 end)
 
@@ -1395,12 +1369,14 @@ end)
 -- INITIAL SCAN
 -- ============================================================
 local npcs = getAllNPCs()
-CountLabel.Text = "NPC: " .. #npcs
+CountLabel.Text = "NPC Detected: " .. #npcs
 
 -- ============================================================
 -- DONE
 -- ============================================================
-print("✅ AUTOFARM v5.0 FAST FARM loaded!")
-print("⚡ Kill rate: 4x lebih cepet")
-print("🎯 Target: Scorpion, Tombguardian, Water Serpent")
-print("🌿 Plant: Ginseng, Spirit Grass")
+print("=========================================")
+print("  AUTOFARM v5.1 - HORIZONTAL EDITION")
+print("  Script Created by ADIEL")
+print("=========================================")
+print("Target NPC: Scorpion, Tombguardian, Water Serpent")
+print("Plant: Ginseng, Spirit Grass")
