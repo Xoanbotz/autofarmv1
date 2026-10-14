@@ -1,12 +1,12 @@
 --[[
 =========================================================
-  UNIVERSAL AUTOFARM v4.9 - AUTOFARM + PLANT COLLECTOR
+  UNIVERSAL AUTOFARM v4.9 FINAL
   Author: Kyriel (for Boss)
   Executor: Delta / Codex / Wave / Xeno
 
 FITUR:
-  - Autofarm LOCK di atas kepala NPC (v4.8 - no lag)
-  - AUTO COLLECT PLANT INSTANT (tanpa teleport!)
+  - Autofarm LOCK di atas kepala NPC (Scorpion, Tombguardian, Water Serpent)
+  - STEALTH PLANT COLLECTOR (dari jauh, auto teleport ke plant, balik)
   - Plants: Ginseng, Lily, Essence Leaf, Spirit Grass, Lotus
   - Tombol terpisah buat autofarm & plant
 =========================================================
@@ -49,18 +49,17 @@ local CONFIG = {
         "SpiritGrass",
         "Lotus",
     },
-    PLANT_SCAN_DELAY = 1,          -- Delay antar scan plant (detik)
-    PLANT_MAX_DEPTH = 6,           -- Kedalaman scan plant
-    FORCE_PROMPT_DISTANCE = true,  -- Paksa prompt biar bisa di-fire dari jauh
+    PLANT_SCAN_DELAY = 2,          -- Delay antar scan (detik)
+    PLANT_MAX_DEPTH = 6,
+    FORCE_PROMPT_DISTANCE = true,
+    PLANT_TELEPORT_DELAY = 0.03,   -- Delay teleport per plant (kecil = cepet)
     
-    -- NPC
+    -- NPC (TIDECRUSHER DIHAPUS)
     NPC_WHITELIST = {
         "Scorpion",
         "Tombguardian",
         "Water Serpent",
-        "Tidecrusher Crab",
         "WaterSerpent",
-        "TidecrusherCrab",
     },
     NPC_BLACKLIST = {},
     MAX_DEPTH = 4,
@@ -133,29 +132,14 @@ end
 -- CHECK NPC
 -- ============================================================
 local function checkNPC(model)
-    if not model or not model:IsA("Model") then
-        return false, "not a model"
-    end
-    
-    if Players:GetPlayerFromCharacter(model) then
-        return false, "is player"
-    end
+    if not model or not model:IsA("Model") then return false, "not a model" end
+    if Players:GetPlayerFromCharacter(model) then return false, "is player" end
     
     local hum = model:FindFirstChildOfClass("Humanoid")
-    if not hum then
-        return false, "no humanoid"
-    end
-    
-    if hum.Health <= 0 then
-        return false, "dead"
-    end
-    
-    if hum.MaxHealth <= 0 then
-        return false, "MaxHealth=0"
-    end
-    if hum.MaxHealth == math.huge or hum.MaxHealth > 1e9 then
-        return false, "invincible"
-    end
+    if not hum then return false, "no humanoid" end
+    if hum.Health <= 0 then return false, "dead" end
+    if hum.MaxHealth <= 0 then return false, "MaxHealth=0" end
+    if hum.MaxHealth == math.huge or hum.MaxHealth > 1e9 then return false, "invincible" end
     
     if hum:GetAttribute("Invincible") == true then return false, "invincible" end
     if hum:GetAttribute("IsQuestGiver") == true then return false, "questgiver" end
@@ -173,20 +157,13 @@ local function checkNPC(model)
         end
     end
     
-    if not isWhitelisted then
-        return false, "not in whitelist"
-    end
+    if not isWhitelisted then return false, "not in whitelist" end
     
     local root = model:FindFirstChild("HumanoidRootPart")
     if not root then
-        root = model:FindFirstChild("Head") 
-            or model:FindFirstChild("Torso")
-            or model:FindFirstChild("UpperTorso")
+        root = model:FindFirstChild("Head") or model:FindFirstChild("Torso") or model:FindFirstChild("UpperTorso")
     end
-    
-    if not root then
-        return false, "no root"
-    end
+    if not root then return false, "no root" end
     
     return true, matchedName
 end
@@ -238,7 +215,6 @@ local function detectNPCFolders()
         table.insert(sorted, {name = name, count = count})
     end
     table.sort(sorted, function(a, b) return a.count > b.count end)
-    
     return sorted
 end
 
@@ -283,7 +259,7 @@ local function getAllNPCs()
 end
 
 -- ============================================================
--- LOCK POSISI KE ATAS KEPALA NPC
+-- LOCK KE ATAS KEPALA NPC
 -- ============================================================
 local function lockToNPC(npc)
     if not npc or not npc.model or not npc.model.Parent then return end
@@ -361,7 +337,7 @@ end
 local function startAutoFarm()
     if isRunning then return end
     isRunning = true
-    log("Started! Mode: LOCK di atas kepala", Color3.fromRGB(0, 255, 100))
+    log("Autofarm STARTED! Mode: LOCK di atas kepala", Color3.fromRGB(0, 255, 100))
     
     task.spawn(function()
         local emptyCount = 0
@@ -424,7 +400,7 @@ local function stopAutoFarm()
 end
 
 -- ============================================================
--- PLANT COLLECTOR - INSTANT (TANPA TELEPORT)
+-- PLANT COLLECTOR - STEALTH MODE (DARI JAUH)
 -- ============================================================
 local function isPlantName(name)
     local nameLower = string.lower(name)
@@ -436,84 +412,127 @@ local function isPlantName(name)
     return false, ""
 end
 
--- Kumpulin semua ProximityPrompt & ClickDetector dari objek yang namanya plant
-local function collectAllPlants()
-    local collected = 0
-    local foundTypes = {}
+-- Cari semua plant di map
+local function findAllPlants()
+    local plants = {}
     
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        local ok, plantType = isPlantName(obj.Name)
-        if ok then
-            local didCollect = false
-            
-            -- CARA 1: ProximityPrompt langsung
-            pcall(function()
-                local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
-                if prompt then
-                    if CONFIG.FORCE_PROMPT_DISTANCE then
-                        prompt.MaxActivationDistance = 9999
-                        prompt.HoldDuration = 0
-                    end
-                    fireproximityprompt(prompt)
-                    didCollect = true
+    local function scan(instance, depth)
+        if depth > CONFIG.PLANT_MAX_DEPTH then return end
+        
+        for _, obj in ipairs(instance:GetChildren()) do
+            local ok, plantType = isPlantName(obj.Name)
+            if ok then
+                local root = nil
+                if obj:IsA("Model") then
+                    root = obj.PrimaryPart 
+                        or obj:FindFirstChild("HumanoidRootPart")
+                        or obj:FindFirstChild("Head")
+                        or obj:FindFirstChild("Handle")
+                        or obj:FindFirstChild("Base")
+                        or obj:FindFirstChildWhichIsA("BasePart", true)
+                elseif obj:IsA("BasePart") then
+                    root = obj
                 end
-            end)
-            
-            -- CARA 2: ProximityPrompt di dalam (Model)
-            if not didCollect then
-                pcall(function()
+                
+                if root then
                     local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt", true)
-                    if prompt then
-                        if CONFIG.FORCE_PROMPT_DISTANCE then
-                            prompt.MaxActivationDistance = 9999
-                            prompt.HoldDuration = 0
-                        end
-                        fireproximityprompt(prompt)
-                        didCollect = true
-                    end
-                end)
-            end
-            
-            -- CARA 3: ClickDetector
-            if not didCollect then
-                pcall(function()
-                    local cd = obj:FindFirstChildOfClass("ClickDetector")
-                    if cd then
-                        fireclickdetector(cd)
-                        didCollect = true
-                    end
-                end)
-            end
-            
-            -- CARA 4: ClickDetector di dalam
-            if not didCollect then
-                pcall(function()
                     local cd = obj:FindFirstChildWhichIsA("ClickDetector", true)
-                    if cd then
-                        fireclickdetector(cd)
-                        didCollect = true
+                    
+                    if prompt or cd then
+                        table.insert(plants, {
+                            obj = obj,
+                            root = root,
+                            name = plantType,
+                            prompt = prompt,
+                            clickDetector = cd
+                        })
                     end
-                end)
+                end
             end
             
-            -- CARA 5: RemoteEvent Fire
-            if not didCollect then
-                pcall(function()
-                    for _, child in ipairs(obj:GetDescendants()) do
-                        if child:IsA("RemoteEvent") then
-                            child:FireServer()
-                            didCollect = true
-                        end
-                    end
-                end)
-            end
-            
-            if didCollect then
-                collected = collected + 1
-                foundTypes[plantType] = (foundTypes[plantType] or 0) + 1
+            if obj:IsA("Folder") or obj:IsA("Model") or obj:IsA("Workspace") then
+                if #obj:GetChildren() > 0 then
+                    scan(obj, depth + 1)
+                end
             end
         end
     end
+    
+    scan(workspace, 0)
+    return plants
+end
+
+-- STEALTH COLLECT: teleport ke plant, fire prompt, balik
+local function collectAllPlantsStealth()
+    local collected = 0
+    local foundTypes = {}
+    
+    -- Simpen posisi awal
+    local originalCFrame = nil
+    if humanoidRootPart and humanoidRootPart.Parent then
+        originalCFrame = humanoidRootPart.CFrame
+    end
+    
+    local plants = findAllPlants()
+    
+    if #plants == 0 then
+        return 0, {}
+    end
+    
+    log("🌿 Found " .. #plants .. " plants. Collecting...", Color3.fromRGB(150, 255, 100))
+    
+    -- Loop tiap plant
+    for i, plant in ipairs(plants) do
+        if not isCollectingPlants then break end
+        if plant.root and plant.root.Parent then
+            
+            -- Stealth teleport ke plant
+            pcall(function()
+                if humanoidRootPart and humanoidRootPart.Parent then
+                    humanoidRootPart.CFrame = CFrame.new(plant.root.Position + Vector3.new(0, 3, 0))
+                    humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+                end
+            end)
+            
+            task.wait(CONFIG.PLANT_TELEPORT_DELAY)
+            
+            -- Fire prompt
+            local success = false
+            
+            if plant.prompt then
+                pcall(function()
+                    if CONFIG.FORCE_PROMPT_DISTANCE then
+                        plant.prompt.MaxActivationDistance = math.huge
+                        plant.prompt.HoldDuration = 0
+                    end
+                    fireproximityprompt(plant.prompt)
+                    success = true
+                end)
+            end
+            
+            if not success and plant.clickDetector then
+                pcall(function()
+                    fireclickdetector(plant.clickDetector)
+                    success = true
+                end)
+            end
+            
+            if success then
+                collected = collected + 1
+                foundTypes[plant.name] = (foundTypes[plant.name] or 0) + 1
+            end
+            
+            task.wait(CONFIG.PLANT_TELEPORT_DELAY)
+        end
+    end
+    
+    -- Balik ke posisi awal
+    pcall(function()
+        if originalCFrame and humanoidRootPart and humanoidRootPart.Parent then
+            humanoidRootPart.CFrame = originalCFrame
+            humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+        end
+    end)
     
     return collected, foundTypes
 end
@@ -521,11 +540,11 @@ end
 local function startPlantCollector()
     if isCollectingPlants then return end
     isCollectingPlants = true
-    log("🌿 Plant Collector: STARTED (INSTANT)", Color3.fromRGB(150, 255, 100))
+    log("🌿 Plant Collector: STARTED (STEALTH MODE)", Color3.fromRGB(150, 255, 100))
     
     task.spawn(function()
         while isCollectingPlants do
-            local count, types = collectAllPlants()
+            local count, types = collectAllPlantsStealth()
             
             if count > 0 then
                 collectedPlants = collectedPlants + count
@@ -563,7 +582,7 @@ ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = player:WaitForChild("PlayerGui")
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 270, 0, 480)  -- Lebih tinggi buat tombol plant
+MainFrame.Size = UDim2.new(0, 270, 0, 480)
 MainFrame.Position = UDim2.new(0, 20, 0, 80)
 MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
 MainFrame.BorderSizePixel = 0
@@ -591,8 +610,8 @@ Title.Size = UDim2.new(1, -60, 1, 0)
 Title.Position = UDim2.new(0, 10, 0, 0)
 Title.BackgroundTransparency = 1
 Title.TextColor3 = Color3.fromRGB(0, 255, 150)
-Title.Text = "🎯 v4.9 - FARM + PLANT"
-Title.TextSize = 13
+Title.Text = "🎯 v4.9 FINAL - FARM + PLANT"
+Title.TextSize = 12
 Title.Font = Enum.Font.GothamBold
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = TitleBar
@@ -625,19 +644,17 @@ local CloseCorner = Instance.new("UICorner")
 CloseCorner.CornerRadius = UDim.new(0, 5)
 CloseCorner.Parent = CloseBtn
 
--- INFO LABEL
 local WLInfo = Instance.new("TextLabel")
 WLInfo.Size = UDim2.new(1, -20, 0, 20)
 WLInfo.Position = UDim2.new(0, 10, 0, 42)
 WLInfo.BackgroundTransparency = 1
 WLInfo.TextColor3 = Color3.fromRGB(0, 200, 255)
-WLInfo.Text = "🎯 FARM + 🌿 PLANT COLLECTOR"
+WLInfo.Text = "🎯 FARM + 🌿 STEALTH PLANT"
 WLInfo.TextSize = 10
 WLInfo.Font = Enum.Font.GothamBold
 WLInfo.TextXAlignment = Enum.TextXAlignment.Left
 WLInfo.Parent = MainFrame
 
--- NPC COUNT
 local CountLabel = Instance.new("TextLabel")
 CountLabel.Size = UDim2.new(1, -20, 0, 20)
 CountLabel.Position = UDim2.new(0, 10, 0, 65)
@@ -649,7 +666,6 @@ CountLabel.Font = Enum.Font.Gotham
 CountLabel.TextXAlignment = Enum.TextXAlignment.Left
 CountLabel.Parent = MainFrame
 
--- PLANT COUNT
 local PlantCountLabel = Instance.new("TextLabel")
 PlantCountLabel.Size = UDim2.new(1, -20, 0, 20)
 PlantCountLabel.Position = UDim2.new(0, 10, 0, 85)
@@ -661,7 +677,6 @@ PlantCountLabel.Font = Enum.Font.Gotham
 PlantCountLabel.TextXAlignment = Enum.TextXAlignment.Left
 PlantCountLabel.Parent = MainFrame
 
--- HP LABEL
 local HPLabel = Instance.new("TextLabel")
 HPLabel.Size = UDim2.new(1, -20, 0, 20)
 HPLabel.Position = UDim2.new(0, 10, 0, 105)
@@ -673,7 +688,6 @@ HPLabel.Font = Enum.Font.Gotham
 HPLabel.TextXAlignment = Enum.TextXAlignment.Left
 HPLabel.Parent = MainFrame
 
--- AUTOFARM BUTTON
 local ToggleButton = Instance.new("TextButton")
 ToggleButton.Size = UDim2.new(1, -20, 0, 40)
 ToggleButton.Position = UDim2.new(0, 10, 0, 130)
@@ -688,7 +702,6 @@ local BtnCorner = Instance.new("UICorner")
 BtnCorner.CornerRadius = UDim.new(0, 8)
 BtnCorner.Parent = ToggleButton
 
--- PLANT COLLECTOR BUTTON
 local PlantToggleBtn = Instance.new("TextButton")
 PlantToggleBtn.Size = UDim2.new(1, -20, 0, 40)
 PlantToggleBtn.Position = UDim2.new(0, 10, 0, 175)
@@ -703,7 +716,6 @@ local PlantBtnCorner = Instance.new("UICorner")
 PlantBtnCorner.CornerRadius = UDim.new(0, 8)
 PlantBtnCorner.Parent = PlantToggleBtn
 
--- STATUS
 local StatusLabel = Instance.new("TextLabel")
 StatusLabel.Size = UDim2.new(1, -20, 0, 20)
 StatusLabel.Position = UDim2.new(0, 10, 0, 220)
@@ -715,20 +727,18 @@ StatusLabel.Font = Enum.Font.Gotham
 StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 StatusLabel.Parent = MainFrame
 
--- NPC LIST INFO
 local NPCListLabel = Instance.new("TextLabel")
 NPCListLabel.Size = UDim2.new(1, -20, 0, 15)
 NPCListLabel.Position = UDim2.new(0, 10, 0, 242)
 NPCListLabel.BackgroundTransparency = 1
 NPCListLabel.TextColor3 = Color3.fromRGB(150, 150, 200)
-NPCListLabel.Text = "NPC: Scorpion|Tombguardian|Water Serpent|Tidecrusher"
+NPCListLabel.Text = "NPC: Scorpion|Tombguardian|Water Serpent"
 NPCListLabel.TextSize = 8
 NPCListLabel.Font = Enum.Font.Gotham
 NPCListLabel.TextXAlignment = Enum.TextXAlignment.Left
 NPCListLabel.TextWrapped = true
 NPCListLabel.Parent = MainFrame
 
--- PLANT LIST INFO
 local PlantListLabel = Instance.new("TextLabel")
 PlantListLabel.Size = UDim2.new(1, -20, 0, 15)
 PlantListLabel.Position = UDim2.new(0, 10, 0, 258)
@@ -741,7 +751,6 @@ PlantListLabel.TextXAlignment = Enum.TextXAlignment.Left
 PlantListLabel.TextWrapped = true
 PlantListLabel.Parent = MainFrame
 
--- TELEPORT BUTTON
 local TeleportBtn = Instance.new("TextButton")
 TeleportBtn.Size = UDim2.new(1, -20, 0, 28)
 TeleportBtn.Position = UDim2.new(0, 10, 0, 278)
@@ -756,7 +765,6 @@ local TeleCorner = Instance.new("UICorner")
 TeleCorner.CornerRadius = UDim.new(0, 6)
 TeleCorner.Parent = TeleportBtn
 
--- INSTANT COLLECT BUTTON (buat manual collect sekali)
 local InstantCollectBtn = Instance.new("TextButton")
 InstantCollectBtn.Size = UDim2.new(1, -20, 0, 28)
 InstantCollectBtn.Position = UDim2.new(0, 10, 0, 310)
@@ -771,7 +779,6 @@ local InstCorner = Instance.new("UICorner")
 InstCorner.CornerRadius = UDim.new(0, 6)
 InstCorner.Parent = InstantCollectBtn
 
--- RESCAN BUTTON
 local RescanBtn = Instance.new("TextButton")
 RescanBtn.Size = UDim2.new(1, -20, 0, 28)
 RescanBtn.Position = UDim2.new(0, 10, 0, 342)
@@ -786,7 +793,6 @@ local RescanCorner = Instance.new("UICorner")
 RescanCorner.CornerRadius = UDim.new(0, 6)
 RescanCorner.Parent = RescanBtn
 
--- LIST BUTTON
 local ListBtn = Instance.new("TextButton")
 ListBtn.Size = UDim2.new(1, -20, 0, 28)
 ListBtn.Position = UDim2.new(0, 10, 0, 374)
@@ -801,7 +807,6 @@ local ListCorner = Instance.new("UICorner")
 ListCorner.CornerRadius = UDim.new(0, 6)
 ListCorner.Parent = ListBtn
 
--- CONSOLE BUTTON
 local ConsoleBtn = Instance.new("TextButton")
 ConsoleBtn.Size = UDim2.new(1, -20, 0, 28)
 ConsoleBtn.Position = UDim2.new(0, 10, 0, 406)
@@ -816,13 +821,12 @@ local ConsoleCorner = Instance.new("UICorner")
 ConsoleCorner.CornerRadius = UDim.new(0, 6)
 ConsoleCorner.Parent = ConsoleBtn
 
--- CREDIT
 local Credit = Instance.new("TextLabel")
 Credit.Size = UDim2.new(1, 0, 0, 15)
 Credit.Position = UDim2.new(0, 0, 1, -15)
 Credit.BackgroundTransparency = 1
 Credit.TextColor3 = Color3.fromRGB(80, 80, 100)
-Credit.Text = "by Kyriel v4.9 - Farm + Plant"
+Credit.Text = "by Kyriel v4.9 FINAL"
 Credit.TextSize = 9
 Credit.Font = Enum.Font.Gotham
 Credit.Parent = MainFrame
@@ -1104,7 +1108,8 @@ makeDraggable(ListPopup, ListTitle)
 -- SCAN AWAL
 -- ============================================================
 log("==================================================", Color3.fromRGB(0, 200, 255))
-log("  AUTOFARM v4.9 - FARM + PLANT", Color3.fromRGB(0, 200, 255))
+log("  v4.9 FINAL - FARM + STEALTH PLANT", Color3.fromRGB(0, 200, 255))
+log("  NPC: Scorpion, Tombguardian, Water Serpent", Color3.fromRGB(0, 200, 255))
 log("  Plant: Ginseng, Lily, Essence Leaf,", Color3.fromRGB(0, 200, 255))
 log("         Spirit Grass, Lotus", Color3.fromRGB(0, 200, 255))
 log("==================================================", Color3.fromRGB(0, 200, 255))
@@ -1189,7 +1194,7 @@ InstantCollectBtn.MouseButton1Click:Connect(function()
     InstantCollectBtn.Text = "⚡ COLLECTING..."
     InstantCollectBtn.BackgroundColor3 = Color3.fromRGB(50, 100, 30)
     
-    local count, types = collectAllPlants()
+    local count, types = collectAllPlantsStealth()
     collectedPlants = collectedPlants + count
     PlantCountLabel.Text = "🌿 Collected: " .. collectedPlants
     
@@ -1297,6 +1302,5 @@ end)
 -- DONE
 -- ============================================================
 log("✅ Script loaded!", Color3.fromRGB(0, 255, 100))
-log("💡 Farm: Klik START AUTOFARM", Color3.fromRGB(200, 200, 100))
-log("💡 Plant: Klik START PLANT COLLECTOR", Color3.fromRGB(200, 200, 100))
-log("💡 Manual: Klik COLLECT ALL SEKARANG", Color3.fromRGB(200, 200, 100))
+log("💡 Farm: Scorpion, Tombguardian, Water Serpent", Color3.fromRGB(200, 200, 100))
+log("💡 Plant: STEALTH MODE (teleport cepet, balik ke posisi)", Color3.fromRGB(200, 200, 100))
