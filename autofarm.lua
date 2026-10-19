@@ -1,17 +1,19 @@
 --[[
 =========================================================
-  UNIVERSAL AUTOFARM v5.1 - HORIZONTAL EDITION
+  UNIVERSAL AUTOFARM v5.4 - DUAL PATH CLAIM
   Author: Kyriel (for ADIEL)
   Executor: Delta / Codex / Wave / Xeno
 
 FITUR:
   - Autofarm LOCK (Scorpion, Tombguardian, Water Serpent)
-  - ULTRA FAST: Kill rate 4x lebih cepet
+  - ULTRA FAST Kill rate
   - Auto-next-target (seamless kill)
   - Anti-death (auto respawn)
-  - Stats: Kills, Kills/menit
   - Stealth Plant Collector (Ginseng & Spirit Grass)
-  - GUI HORIZONTAL (kesamping)
+  - AUTO CLAIM PLAYTIME REWARDS (2 path: Events + Shop)
+  - ANTI-AFK (CaptureController)
+  - GUI HORIZONTAL + Dark + No Emoji
+  - Script Created by ADIEL
 =========================================================
 ]]
 
@@ -28,7 +30,7 @@ local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
 local humanoid = character:WaitForChild("Humanoid")
 
 -- ============================================================
--- CONFIG (TURBO MODE)
+-- CONFIG
 -- ============================================================
 local CONFIG = {
     ATTACK_RANGE = 150,
@@ -64,6 +66,8 @@ local CONFIG = {
     LOG_LIMIT = 30,
     SCAN_INTERVAL = 10,
     DEBUG = false,
+    
+    CLAIM_INTERVAL = 15,
 }
 
 -- ============================================================
@@ -79,6 +83,7 @@ local lastFarmPosition = nil
 local stats = {
     kills = 0,
     collectedPlants = 0,
+    claimedRewards = 0,
     startTime = 0,
     lastKillTime = 0,
 }
@@ -324,7 +329,7 @@ local function startAutoFarm()
     isRunning = true
     stats.startTime = tick()
     
-    log("AUTOFARM STARTED (FAST MODE)", Color3.fromRGB(0, 255, 100))
+    log("AUTOFARM STARTED", Color3.fromRGB(0, 255, 100))
     
     setupAntiDeath()
     
@@ -563,7 +568,7 @@ local function stopPlantCollector()
 end
 
 -- ============================================================
--- GUI - HORIZONTAL LAYOUT
+-- GUI
 -- ============================================================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "AutofarmGUI"
@@ -571,10 +576,9 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = player:WaitForChild("PlayerGui")
 
--- MAIN FRAME (LEBAR KE SAMPING)
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 720, 0, 280)
-MainFrame.Position = UDim2.new(0.5, -360, 0.5, -140)
+MainFrame.Size = UDim2.new(0, 720, 0, 300)
+MainFrame.Position = UDim2.new(0.5, -360, 0.5, -150)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -607,7 +611,7 @@ Title.Size = UDim2.new(1, -80, 1, 0)
 Title.Position = UDim2.new(0, 12, 0, 0)
 Title.BackgroundTransparency = 1
 Title.TextColor3 = Color3.fromRGB(0, 220, 130)
-Title.Text = "AUTOFARM v5.1 - Script Created by ADIEL"
+Title.Text = "AUTOFARM v5.4 - Script Created by ADIEL"
 Title.TextSize = 13
 Title.Font = Enum.Font.GothamBold
 Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -641,11 +645,7 @@ local CloseCorner = Instance.new("UICorner")
 CloseCorner.CornerRadius = UDim.new(0, 5)
 CloseCorner.Parent = CloseBtn
 
--- ═══════════════════════════════════════════
--- 3 COLUMNS LAYOUT
--- ═══════════════════════════════════════════
-
--- ═══ COLUMN 1: STATS (LEFT) ═══
+-- COLUMN 1: STATS
 local StatsFrame = Instance.new("Frame")
 StatsFrame.Size = UDim2.new(0, 220, 1, -50)
 StatsFrame.Position = UDim2.new(0, 12, 0, 42)
@@ -706,16 +706,26 @@ PlantCountLabel.Size = UDim2.new(1, -16, 0, 18)
 PlantCountLabel.Position = UDim2.new(0, 8, 0, 100)
 PlantCountLabel.BackgroundTransparency = 1
 PlantCountLabel.TextColor3 = Color3.fromRGB(140, 220, 140)
-PlantCountLabel.Text = "Plants Collected: 0"
+PlantCountLabel.Text = "Plants: 0"
 PlantCountLabel.TextSize = 11
 PlantCountLabel.Font = Enum.Font.Gotham
 PlantCountLabel.TextXAlignment = Enum.TextXAlignment.Left
 PlantCountLabel.Parent = StatsFrame
 
--- HP Bar
+local RewardCountLabel = Instance.new("TextLabel")
+RewardCountLabel.Size = UDim2.new(1, -16, 0, 18)
+RewardCountLabel.Position = UDim2.new(0, 8, 0, 120)
+RewardCountLabel.BackgroundTransparency = 1
+RewardCountLabel.TextColor3 = Color3.fromRGB(255, 220, 100)
+RewardCountLabel.Text = "Rewards: 0"
+RewardCountLabel.TextSize = 11
+RewardCountLabel.Font = Enum.Font.Gotham
+RewardCountLabel.TextXAlignment = Enum.TextXAlignment.Left
+RewardCountLabel.Parent = StatsFrame
+
 local HPText = Instance.new("TextLabel")
 HPText.Size = UDim2.new(1, -16, 0, 16)
-HPText.Position = UDim2.new(0, 8, 0, 130)
+HPText.Position = UDim2.new(0, 8, 0, 148)
 HPText.BackgroundTransparency = 1
 HPText.TextColor3 = Color3.fromRGB(140, 140, 180)
 HPText.Text = "HP"
@@ -726,7 +736,7 @@ HPText.Parent = StatsFrame
 
 local HPBarBG = Instance.new("Frame")
 HPBarBG.Size = UDim2.new(1, -16, 0, 10)
-HPBarBG.Position = UDim2.new(0, 8, 0, 150)
+HPBarBG.Position = UDim2.new(0, 8, 0, 168)
 HPBarBG.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
 HPBarBG.BorderSizePixel = 0
 HPBarBG.Parent = StatsFrame
@@ -745,10 +755,9 @@ local HPBarFill_Corner = Instance.new("UICorner")
 HPBarFill_Corner.CornerRadius = UDim.new(1, 0)
 HPBarFill_Corner.Parent = HPBarFill
 
--- Status
 local StatusLabel = Instance.new("TextLabel")
 StatusLabel.Size = UDim2.new(1, -16, 0, 40)
-StatusLabel.Position = UDim2.new(0, 8, 0, 175)
+StatusLabel.Position = UDim2.new(0, 8, 0, 195)
 StatusLabel.BackgroundTransparency = 1
 StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
 StatusLabel.Text = "Farm: IDLE\nPlant: IDLE"
@@ -759,7 +768,7 @@ StatusLabel.TextYAlignment = Enum.TextYAlignment.Top
 StatusLabel.TextWrapped = true
 StatusLabel.Parent = StatsFrame
 
--- ═══ COLUMN 2: AUTOFARM (CENTER) ═══
+-- COLUMN 2: AUTOFARM
 local FarmFrame = Instance.new("Frame")
 FarmFrame.Size = UDim2.new(0, 220, 1, -50)
 FarmFrame.Position = UDim2.new(0, 244, 0, 42)
@@ -852,7 +861,7 @@ local ConsoleCorner = Instance.new("UICorner")
 ConsoleCorner.CornerRadius = UDim.new(0, 6)
 ConsoleCorner.Parent = ConsoleBtn
 
--- ═══ COLUMN 3: PLANT (RIGHT) ═══
+-- COLUMN 3: PLANT
 local PlantFrame = Instance.new("Frame")
 PlantFrame.Size = UDim2.new(0, 220, 1, -50)
 PlantFrame.Position = UDim2.new(0, 476, 0, 42)
@@ -929,9 +938,7 @@ NPCInfo.TextYAlignment = Enum.TextYAlignment.Top
 NPCInfo.TextWrapped = true
 NPCInfo.Parent = PlantFrame
 
--- ============================================================
 -- CONSOLE POPUP
--- ============================================================
 ConsolePopup = Instance.new("Frame")
 ConsolePopup.Size = UDim2.new(0, 340, 0, 260)
 ConsolePopup.Position = UDim2.new(0.5, -170, 0.5, -130)
@@ -1014,9 +1021,7 @@ local LogList = Instance.new("UIListLayout")
 LogList.Padding = UDim.new(0, 2)
 LogList.Parent = LogScroll
 
--- ============================================================
 -- NPC LIST POPUP
--- ============================================================
 local ListPopup = Instance.new("Frame")
 ListPopup.Size = UDim2.new(0, 280, 0, 280)
 ListPopup.Position = UDim2.new(0.5, -140, 0.5, -140)
@@ -1130,9 +1135,7 @@ local function refreshNPCList()
     end
 end
 
--- ============================================================
 -- FLOATING BUBBLE
--- ============================================================
 local Bubble = Instance.new("TextButton")
 Bubble.Name = "FloatingBubble"
 Bubble.Size = UDim2.new(0, 50, 0, 50)
@@ -1155,9 +1158,7 @@ BubbleStroke.Color = Color3.fromRGB(0, 220, 130)
 BubbleStroke.Thickness = 2
 BubbleStroke.Parent = Bubble
 
--- ============================================================
 -- DRAGGABLE
--- ============================================================
 local function makeDraggable(frame, dragHandle)
     dragHandle = dragHandle or frame
     
@@ -1199,9 +1200,7 @@ makeDraggable(Bubble, Bubble)
 makeDraggable(ConsolePopup, ConsoleTitle)
 makeDraggable(ListPopup, ListTitle)
 
--- ============================================================
 -- REAL-TIME STATS UPDATE
--- ============================================================
 task.spawn(function()
     while task.wait(0.5) do
         if humanoid and humanoid.Parent then
@@ -1218,6 +1217,8 @@ task.spawn(function()
         end
         
         KillsLabel.Text = "Kills: " .. stats.kills
+        PlantCountLabel.Text = "Plants: " .. stats.collectedPlants
+        RewardCountLabel.Text = "Rewards: " .. stats.claimedRewards
         
         if stats.startTime > 0 and isRunning then
             local elapsed = tick() - stats.startTime
@@ -1238,9 +1239,7 @@ task.spawn(function()
     end
 end)
 
--- ============================================================
 -- EVENT HANDLERS
--- ============================================================
 ToggleButton.MouseButton1Click:Connect(function()
     if isRunning then
         stopAutoFarm()
@@ -1277,7 +1276,7 @@ InstantCollectBtn.MouseButton1Click:Connect(function()
     
     local count, types = collectAllPlantsStealth()
     stats.collectedPlants = stats.collectedPlants + count
-    PlantCountLabel.Text = "Plants Collected: " .. stats.collectedPlants
+    PlantCountLabel.Text = "Plants: " .. stats.collectedPlants
     
     InstantCollectBtn.Text = "+" .. count
     task.wait(1)
@@ -1338,7 +1337,7 @@ MinBtn.MouseButton1Click:Connect(function()
         MainFrame.Size = UDim2.new(0, 720, 0, 35)
         MinBtn.Text = "o"
     else
-        MainFrame.Size = UDim2.new(0, 720, 0, 280)
+        MainFrame.Size = UDim2.new(0, 720, 0, 300)
         MinBtn.Text = "_"
     end
 end)
@@ -1355,28 +1354,127 @@ Bubble.MouseButton1Click:Connect(function()
 end)
 
 -- ============================================================
--- ANTI-AFK
+-- ANTI-AFK (VERSI LO)
 -- ============================================================
 player.Idled:Connect(function()
     pcall(function()
-        VirtualUser:Button2Down(Vector2.new(0, 0))
-        task.wait(1)
-        VirtualUser:Button2Up(Vector2.new(0, 0))
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
     end)
 end)
 
 -- ============================================================
--- INITIAL SCAN
+-- AUTO CLAIM PLAYTIME REWARDS (DUAL PATH)
 -- ============================================================
+local function pressButton(btn)
+    for _, sig in ipairs({"MouseButton1Click", "Activated", "MouseButton1Down", "MouseButton1Up"}) do
+        pcall(function()
+            for _, c in ipairs(getconnections(btn[sig])) do
+                c:Fire()
+            end
+        end)
+    end
+end
+
+local function isClaimButton(obj)
+    local nameLower = string.lower(obj.Name or "")
+    local textLower = ""
+    if obj:IsA("TextButton") then
+        textLower = string.lower(obj.Text or "")
+    end
+    
+    return string.find(nameLower, "claim") 
+        or string.find(nameLower, "collect")
+        or string.find(textLower, "claim")
+        or string.find(textLower, "collect")
+end
+
+local function claimIn(obj)
+    local claimed = 0
+    
+    if obj:IsA("GuiButton") then
+        pressButton(obj)
+        claimed = claimed + 1
+    end
+    
+    for _, d in ipairs(obj:GetDescendants()) do
+        if d:IsA("GuiButton") and isClaimButton(d) then
+            pressButton(d)
+            claimed = claimed + 1
+        end
+    end
+    
+    return claimed
+end
+
+task.spawn(function()
+    while task.wait(CONFIG.CLAIM_INTERVAL) do
+        pcall(function()
+            local playerGui = player:FindFirstChild("PlayerGui")
+            if not playerGui then return end
+            
+            local mainGui = playerGui:FindFirstChild("Main")
+            if not mainGui then return end
+            
+            local frames = mainGui:FindFirstChild("Frames")
+            if not frames then return end
+            
+            local totalClaimed = 0
+            
+            -- PATH 1: Events (Merits) - PlaytimeRewards folder
+            pcall(function()
+                local eventsFrame = frames:FindFirstChild("Events")
+                if eventsFrame then
+                    local container = eventsFrame:FindFirstChild("Container")
+                    if container then
+                        for _, folder in ipairs(container:GetChildren()) do
+                            if string.find(folder.Name, "PlaytimeRewards") then
+                                local claim = folder:FindFirstChild("Claim")
+                                if claim then
+                                    totalClaimed = totalClaimed + claimIn(claim)
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+            
+            -- PATH 2: Shop (Time Reward) - numeric folder names
+            pcall(function()
+                local shopFrame = frames:FindFirstChild("Shop")
+                if shopFrame then
+                    local playtimeRewards = shopFrame:FindFirstChild("PlaytimeRewards")
+                    if playtimeRewards then
+                        local shopContainer = playtimeRewards:FindFirstChild("Container")
+                        if shopContainer then
+                            for _, folder in ipairs(shopContainer:GetChildren()) do
+                                if tonumber(folder.Name) then
+                                    totalClaimed = totalClaimed + claimIn(folder)
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+            
+            if totalClaimed > 0 then
+                stats.claimedRewards = stats.claimedRewards + totalClaimed
+                log("Claimed " .. totalClaimed .. " reward button(s)", Color3.fromRGB(255, 220, 100))
+            end
+        end)
+    end
+end)
+
+-- INITIAL SCAN
 local npcs = getAllNPCs()
 CountLabel.Text = "NPC Detected: " .. #npcs
 
--- ============================================================
 -- DONE
--- ============================================================
 print("=========================================")
-print("  AUTOFARM v5.1 - HORIZONTAL EDITION")
+print("  AUTOFARM v5.4 - DUAL PATH CLAIM")
 print("  Script Created by ADIEL")
 print("=========================================")
 print("Target NPC: Scorpion, Tombguardian, Water Serpent")
 print("Plant: Ginseng, Spirit Grass")
+print("Reward Claim: Events + Shop PlaytimeRewards")
+print("Anti-AFK: CaptureController")
