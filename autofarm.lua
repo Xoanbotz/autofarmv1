@@ -1,6 +1,6 @@
 --[[
 =========================================================
-  UNIVERSAL AUTOFARM v5.4 - DUAL PATH CLAIM
+  UNIVERSAL AUTOFARM v6.1 - CYBERPUNK RED GUI + ESSENCE LEAF
   Author: Kyriel (for ADIEL)
   Executor: Delta / Codex / Wave / Xeno
 
@@ -9,10 +9,10 @@ FITUR:
   - ULTRA FAST Kill rate
   - Auto-next-target (seamless kill)
   - Anti-death (auto respawn)
-  - Stealth Plant Collector (Ginseng & Spirit Grass)
-  - AUTO CLAIM PLAYTIME REWARDS (2 path: Events + Shop)
+  - Stealth Plant Collector (Ginseng, Spirit Grass, Essence Leaf)
+  - AUTO CLAIM PLAYTIME REWARDS (dual path)
   - ANTI-AFK (CaptureController)
-  - GUI HORIZONTAL + Dark + No Emoji
+  - GUI CYBERPUNK RED
   - Script Created by ADIEL
 =========================================================
 ]]
@@ -23,6 +23,7 @@ FITUR:
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local VirtualUser = game:GetService("VirtualUser")
+local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -48,6 +49,8 @@ local CONFIG = {
         "Ginseng",
         "Spirit Grass",
         "SpiritGrass",
+        "Essence Leaf",
+        "EssenceLeaf",
     },
     PLANT_SCAN_DELAY = 3,
     PLANT_MAX_DEPTH = 6,
@@ -63,7 +66,7 @@ local CONFIG = {
     },
     NPC_BLACKLIST = {},
     MAX_DEPTH = 4,
-    LOG_LIMIT = 30,
+    LOG_LIMIT = 100,
     SCAN_INTERVAL = 10,
     DEBUG = false,
     
@@ -79,6 +82,8 @@ local currentTarget = nil
 local lastSkillTime = 0
 local cachedTool = nil
 local lastFarmPosition = nil
+local cachedNPCCount = 0
+local logOrder = 0
 
 local stats = {
     kills = 0,
@@ -93,37 +98,44 @@ local stats = {
 -- ============================================================
 local LogScroll = nil
 local ConsolePopup = nil
-local logCount = 0
 
 local function log(msg, color)
     if CONFIG.DEBUG then
         print("[Autofarm] " .. tostring(msg))
     end
     
-    if not LogScroll or not LogScroll.Parent or not ConsolePopup or not ConsolePopup.Visible then
-        return
-    end
+    if not LogScroll or not LogScroll.Parent then return end
     
+    logOrder = logOrder + 1
     local newLabel = Instance.new("TextLabel")
+    newLabel.LayoutOrder = logOrder
+    newLabel.Text = "[" .. os.date("%H:%M:%S") .. "] " .. tostring(msg)
     newLabel.Size = UDim2.new(1, -6, 0, 0)
     newLabel.AutomaticSize = Enum.AutomaticSize.Y
     newLabel.BackgroundTransparency = 1
-    newLabel.TextColor3 = color or Color3.fromRGB(150, 255, 150)
-    newLabel.Text = "> " .. tostring(msg)
-    newLabel.TextSize = 10
+    newLabel.TextColor3 = color or Color3.fromRGB(255, 90, 110)
     newLabel.Font = Enum.Font.Code
-    newLabel.TextXAlignment = Enum.TextXAlignment.Left
+    newLabel.TextSize = 12
     newLabel.TextWrapped = true
+    newLabel.TextXAlignment = Enum.TextXAlignment.Left
+    newLabel.TextYAlignment = Enum.TextYAlignment.Top
+    newLabel.ZIndex = 23
     newLabel.Parent = LogScroll
     
-    logCount = logCount + 1
-    LogScroll.CanvasPosition = Vector2.new(0, LogScroll.AbsoluteCanvasSize.Y)
+    task.defer(function()
+        if LogScroll then
+            LogScroll.CanvasPosition = Vector2.new(0, LogScroll.AbsoluteCanvasSize.Y)
+        end
+    end)
     
-    if logCount > CONFIG.LOG_LIMIT then
+    local count = 0
+    for _, child in ipairs(LogScroll:GetChildren()) do
+        if child:IsA("TextLabel") then count = count + 1 end
+    end
+    if count > CONFIG.LOG_LIMIT then
         for _, child in ipairs(LogScroll:GetChildren()) do
             if child:IsA("TextLabel") then
                 child:Destroy()
-                logCount = logCount - 1
                 break
             end
         end
@@ -218,7 +230,7 @@ local function getAllNPCs()
 end
 
 -- ============================================================
--- LOCK KE ATAS KEPALA NPC
+-- LOCK / TELEPORT
 -- ============================================================
 local function lockToNPC(npc)
     if not npc or not npc.model or not npc.model.Parent then return end
@@ -544,9 +556,6 @@ local function startPlantCollector()
             
             if count > 0 then
                 stats.collectedPlants = stats.collectedPlants + count
-                if PlantCountLabel then
-                    PlantCountLabel.Text = "Plants: " .. stats.collectedPlants
-                end
                 
                 local typeStr = ""
                 for t, c in pairs(types) do
@@ -568,611 +577,135 @@ local function stopPlantCollector()
 end
 
 -- ============================================================
--- GUI
+-- CYBERPUNK GUI
 -- ============================================================
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "AutofarmGUI"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Parent = player:WaitForChild("PlayerGui")
-
-local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 720, 0, 300)
-MainFrame.Position = UDim2.new(0.5, -360, 0.5, -150)
-MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-MainFrame.BorderSizePixel = 0
-MainFrame.Active = true
-MainFrame.Visible = true
-MainFrame.Parent = ScreenGui
-
-local MainCorner = Instance.new("UICorner")
-MainCorner.CornerRadius = UDim.new(0, 10)
-MainCorner.Parent = MainFrame
-
-local MainStroke = Instance.new("UIStroke")
-MainStroke.Color = Color3.fromRGB(40, 40, 55)
-MainStroke.Thickness = 1
-MainStroke.Parent = MainFrame
-
--- TITLE BAR
-local TitleBar = Instance.new("Frame")
-TitleBar.Size = UDim2.new(1, 0, 0, 35)
-TitleBar.BackgroundColor3 = Color3.fromRGB(22, 22, 32)
-TitleBar.BorderSizePixel = 0
-TitleBar.Active = true
-TitleBar.Parent = MainFrame
-
-local TitleBarCorner = Instance.new("UICorner")
-TitleBarCorner.CornerRadius = UDim.new(0, 10)
-TitleBarCorner.Parent = TitleBar
-
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, -80, 1, 0)
-Title.Position = UDim2.new(0, 12, 0, 0)
-Title.BackgroundTransparency = 1
-Title.TextColor3 = Color3.fromRGB(0, 220, 130)
-Title.Text = "AUTOFARM v5.4 - Script Created by ADIEL"
-Title.TextSize = 13
-Title.Font = Enum.Font.GothamBold
-Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Parent = TitleBar
-
-local MinBtn = Instance.new("TextButton")
-MinBtn.Size = UDim2.new(0, 26, 0, 26)
-MinBtn.Position = UDim2.new(1, -60, 0, 4)
-MinBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
-MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-MinBtn.Text = "_"
-MinBtn.TextSize = 14
-MinBtn.Font = Enum.Font.GothamBold
-MinBtn.Parent = TitleBar
-
-local MinCorner = Instance.new("UICorner")
-MinCorner.CornerRadius = UDim.new(0, 5)
-MinCorner.Parent = MinBtn
-
-local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size = UDim2.new(0, 26, 0, 26)
-CloseBtn.Position = UDim2.new(1, -30, 0, 4)
-CloseBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
-CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-CloseBtn.Text = "X"
-CloseBtn.TextSize = 13
-CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.Parent = TitleBar
-
-local CloseCorner = Instance.new("UICorner")
-CloseCorner.CornerRadius = UDim.new(0, 5)
-CloseCorner.Parent = CloseBtn
-
--- COLUMN 1: STATS
-local StatsFrame = Instance.new("Frame")
-StatsFrame.Size = UDim2.new(0, 220, 1, -50)
-StatsFrame.Position = UDim2.new(0, 12, 0, 42)
-StatsFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
-StatsFrame.BorderSizePixel = 0
-StatsFrame.Parent = MainFrame
-
-local StatsCorner = Instance.new("UICorner")
-StatsCorner.CornerRadius = UDim.new(0, 8)
-StatsCorner.Parent = StatsFrame
-
-local StatsTitle = Instance.new("TextLabel")
-StatsTitle.Size = UDim2.new(1, -16, 0, 20)
-StatsTitle.Position = UDim2.new(0, 8, 0, 8)
-StatsTitle.BackgroundTransparency = 1
-StatsTitle.TextColor3 = Color3.fromRGB(0, 200, 255)
-StatsTitle.Text = "STATISTIK"
-StatsTitle.TextSize = 11
-StatsTitle.Font = Enum.Font.GothamBold
-StatsTitle.TextXAlignment = Enum.TextXAlignment.Left
-StatsTitle.Parent = StatsFrame
-
-local KillsLabel = Instance.new("TextLabel")
-KillsLabel.Size = UDim2.new(1, -16, 0, 22)
-KillsLabel.Position = UDim2.new(0, 8, 0, 32)
-KillsLabel.BackgroundTransparency = 1
-KillsLabel.TextColor3 = Color3.fromRGB(0, 220, 130)
-KillsLabel.Text = "Kills: 0"
-KillsLabel.TextSize = 13
-KillsLabel.Font = Enum.Font.GothamBold
-KillsLabel.TextXAlignment = Enum.TextXAlignment.Left
-KillsLabel.Parent = StatsFrame
-
-local KPM = Instance.new("TextLabel")
-KPM.Size = UDim2.new(1, -16, 0, 20)
-KPM.Position = UDim2.new(0, 8, 0, 56)
-KPM.BackgroundTransparency = 1
-KPM.TextColor3 = Color3.fromRGB(255, 180, 80)
-KPM.Text = "KPM: 0"
-KPM.TextSize = 12
-KPM.Font = Enum.Font.GothamBold
-KPM.TextXAlignment = Enum.TextXAlignment.Left
-KPM.Parent = StatsFrame
-
-local CountLabel = Instance.new("TextLabel")
-CountLabel.Size = UDim2.new(1, -16, 0, 18)
-CountLabel.Position = UDim2.new(0, 8, 0, 80)
-CountLabel.BackgroundTransparency = 1
-CountLabel.TextColor3 = Color3.fromRGB(140, 140, 180)
-CountLabel.Text = "NPC Detected: 0"
-CountLabel.TextSize = 11
-CountLabel.Font = Enum.Font.Gotham
-CountLabel.TextXAlignment = Enum.TextXAlignment.Left
-CountLabel.Parent = StatsFrame
-
-local PlantCountLabel = Instance.new("TextLabel")
-PlantCountLabel.Size = UDim2.new(1, -16, 0, 18)
-PlantCountLabel.Position = UDim2.new(0, 8, 0, 100)
-PlantCountLabel.BackgroundTransparency = 1
-PlantCountLabel.TextColor3 = Color3.fromRGB(140, 220, 140)
-PlantCountLabel.Text = "Plants: 0"
-PlantCountLabel.TextSize = 11
-PlantCountLabel.Font = Enum.Font.Gotham
-PlantCountLabel.TextXAlignment = Enum.TextXAlignment.Left
-PlantCountLabel.Parent = StatsFrame
-
-local RewardCountLabel = Instance.new("TextLabel")
-RewardCountLabel.Size = UDim2.new(1, -16, 0, 18)
-RewardCountLabel.Position = UDim2.new(0, 8, 0, 120)
-RewardCountLabel.BackgroundTransparency = 1
-RewardCountLabel.TextColor3 = Color3.fromRGB(255, 220, 100)
-RewardCountLabel.Text = "Rewards: 0"
-RewardCountLabel.TextSize = 11
-RewardCountLabel.Font = Enum.Font.Gotham
-RewardCountLabel.TextXAlignment = Enum.TextXAlignment.Left
-RewardCountLabel.Parent = StatsFrame
-
-local HPText = Instance.new("TextLabel")
-HPText.Size = UDim2.new(1, -16, 0, 16)
-HPText.Position = UDim2.new(0, 8, 0, 148)
-HPText.BackgroundTransparency = 1
-HPText.TextColor3 = Color3.fromRGB(140, 140, 180)
-HPText.Text = "HP"
-HPText.TextSize = 11
-HPText.Font = Enum.Font.Gotham
-HPText.TextXAlignment = Enum.TextXAlignment.Left
-HPText.Parent = StatsFrame
-
-local HPBarBG = Instance.new("Frame")
-HPBarBG.Size = UDim2.new(1, -16, 0, 10)
-HPBarBG.Position = UDim2.new(0, 8, 0, 168)
-HPBarBG.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-HPBarBG.BorderSizePixel = 0
-HPBarBG.Parent = StatsFrame
-
-local HPBarBG_Corner = Instance.new("UICorner")
-HPBarBG_Corner.CornerRadius = UDim.new(1, 0)
-HPBarBG_Corner.Parent = HPBarBG
-
-local HPBarFill = Instance.new("Frame")
-HPBarFill.Size = UDim2.new(1, 0, 1, 0)
-HPBarFill.BackgroundColor3 = Color3.fromRGB(0, 220, 100)
-HPBarFill.BorderSizePixel = 0
-HPBarFill.Parent = HPBarBG
-
-local HPBarFill_Corner = Instance.new("UICorner")
-HPBarFill_Corner.CornerRadius = UDim.new(1, 0)
-HPBarFill_Corner.Parent = HPBarFill
-
-local StatusLabel = Instance.new("TextLabel")
-StatusLabel.Size = UDim2.new(1, -16, 0, 40)
-StatusLabel.Position = UDim2.new(0, 8, 0, 195)
-StatusLabel.BackgroundTransparency = 1
-StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-StatusLabel.Text = "Farm: IDLE\nPlant: IDLE"
-StatusLabel.TextSize = 10
-StatusLabel.Font = Enum.Font.Gotham
-StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
-StatusLabel.TextYAlignment = Enum.TextYAlignment.Top
-StatusLabel.TextWrapped = true
-StatusLabel.Parent = StatsFrame
-
--- COLUMN 2: AUTOFARM
-local FarmFrame = Instance.new("Frame")
-FarmFrame.Size = UDim2.new(0, 220, 1, -50)
-FarmFrame.Position = UDim2.new(0, 244, 0, 42)
-FarmFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
-FarmFrame.BorderSizePixel = 0
-FarmFrame.Parent = MainFrame
-
-local FarmCorner = Instance.new("UICorner")
-FarmCorner.CornerRadius = UDim.new(0, 8)
-FarmCorner.Parent = FarmFrame
-
-local FarmTitle = Instance.new("TextLabel")
-FarmTitle.Size = UDim2.new(1, -16, 0, 20)
-FarmTitle.Position = UDim2.new(0, 8, 0, 8)
-FarmTitle.BackgroundTransparency = 1
-FarmTitle.TextColor3 = Color3.fromRGB(0, 200, 255)
-FarmTitle.Text = "AUTOFARM"
-FarmTitle.TextSize = 11
-FarmTitle.Font = Enum.Font.GothamBold
-FarmTitle.TextXAlignment = Enum.TextXAlignment.Left
-FarmTitle.Parent = FarmFrame
-
-local ToggleButton = Instance.new("TextButton")
-ToggleButton.Size = UDim2.new(1, -16, 0, 40)
-ToggleButton.Position = UDim2.new(0, 8, 0, 32)
-ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 160, 0)
-ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleButton.Text = "START AUTOFARM"
-ToggleButton.TextSize = 13
-ToggleButton.Font = Enum.Font.GothamBold
-ToggleButton.Parent = FarmFrame
-
-local ToggleCorner = Instance.new("UICorner")
-ToggleCorner.CornerRadius = UDim.new(0, 6)
-ToggleCorner.Parent = ToggleButton
-
-local TeleportBtn = Instance.new("TextButton")
-TeleportBtn.Size = UDim2.new(1, -16, 0, 32)
-TeleportBtn.Position = UDim2.new(0, 8, 0, 80)
-TeleportBtn.BackgroundColor3 = Color3.fromRGB(0, 110, 180)
-TeleportBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-TeleportBtn.Text = "TELEPORT KE MOB"
-TeleportBtn.TextSize = 12
-TeleportBtn.Font = Enum.Font.GothamBold
-TeleportBtn.Parent = FarmFrame
-
-local TeleCorner = Instance.new("UICorner")
-TeleCorner.CornerRadius = UDim.new(0, 6)
-TeleCorner.Parent = TeleportBtn
-
-local ListBtn = Instance.new("TextButton")
-ListBtn.Size = UDim2.new(1, -16, 0, 32)
-ListBtn.Position = UDim2.new(0, 8, 0, 120)
-ListBtn.BackgroundColor3 = Color3.fromRGB(90, 50, 120)
-ListBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-ListBtn.Text = "LIST NPC TARGET"
-ListBtn.TextSize = 12
-ListBtn.Font = Enum.Font.GothamBold
-ListBtn.Parent = FarmFrame
-
-local ListCorner = Instance.new("UICorner")
-ListCorner.CornerRadius = UDim.new(0, 6)
-ListCorner.Parent = ListBtn
-
-local RescanBtn = Instance.new("TextButton")
-RescanBtn.Size = UDim2.new(1, -16, 0, 32)
-RescanBtn.Position = UDim2.new(0, 8, 0, 160)
-RescanBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 70)
-RescanBtn.TextColor3 = Color3.fromRGB(200, 200, 255)
-RescanBtn.Text = "RESCAN NPC"
-RescanBtn.TextSize = 12
-RescanBtn.Font = Enum.Font.GothamBold
-RescanBtn.Parent = FarmFrame
-
-local RescanCorner = Instance.new("UICorner")
-RescanCorner.CornerRadius = UDim.new(0, 6)
-RescanCorner.Parent = RescanBtn
-
-local ConsoleBtn = Instance.new("TextButton")
-ConsoleBtn.Size = UDim2.new(1, -16, 0, 32)
-ConsoleBtn.Position = UDim2.new(0, 8, 0, 200)
-ConsoleBtn.BackgroundColor3 = Color3.fromRGB(35, 60, 35)
-ConsoleBtn.TextColor3 = Color3.fromRGB(150, 220, 150)
-ConsoleBtn.Text = "OPEN CONSOLE"
-ConsoleBtn.TextSize = 12
-ConsoleBtn.Font = Enum.Font.GothamBold
-ConsoleBtn.Parent = FarmFrame
-
-local ConsoleCorner = Instance.new("UICorner")
-ConsoleCorner.CornerRadius = UDim.new(0, 6)
-ConsoleCorner.Parent = ConsoleBtn
-
--- COLUMN 3: PLANT
-local PlantFrame = Instance.new("Frame")
-PlantFrame.Size = UDim2.new(0, 220, 1, -50)
-PlantFrame.Position = UDim2.new(0, 476, 0, 42)
-PlantFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
-PlantFrame.BorderSizePixel = 0
-PlantFrame.Parent = MainFrame
-
-local PlantCorner = Instance.new("UICorner")
-PlantCorner.CornerRadius = UDim.new(0, 8)
-PlantCorner.Parent = PlantFrame
-
-local PlantTitle = Instance.new("TextLabel")
-PlantTitle.Size = UDim2.new(1, -16, 0, 20)
-PlantTitle.Position = UDim2.new(0, 8, 0, 8)
-PlantTitle.BackgroundTransparency = 1
-PlantTitle.TextColor3 = Color3.fromRGB(150, 220, 100)
-PlantTitle.Text = "PLANT COLLECTOR"
-PlantTitle.TextSize = 11
-PlantTitle.Font = Enum.Font.GothamBold
-PlantTitle.TextXAlignment = Enum.TextXAlignment.Left
-PlantTitle.Parent = PlantFrame
-
-local PlantToggleBtn = Instance.new("TextButton")
-PlantToggleBtn.Size = UDim2.new(1, -16, 0, 40)
-PlantToggleBtn.Position = UDim2.new(0, 8, 0, 32)
-PlantToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 130, 70)
-PlantToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-PlantToggleBtn.Text = "START PLANT COLLECTOR"
-PlantToggleBtn.TextSize = 12
-PlantToggleBtn.Font = Enum.Font.GothamBold
-PlantToggleBtn.Parent = PlantFrame
-
-local PlantToggleCorner = Instance.new("UICorner")
-PlantToggleCorner.CornerRadius = UDim.new(0, 6)
-PlantToggleCorner.Parent = PlantToggleBtn
-
-local InstantCollectBtn = Instance.new("TextButton")
-InstantCollectBtn.Size = UDim2.new(1, -16, 0, 32)
-InstantCollectBtn.Position = UDim2.new(0, 8, 0, 80)
-InstantCollectBtn.BackgroundColor3 = Color3.fromRGB(70, 160, 50)
-InstantCollectBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-InstantCollectBtn.Text = "COLLECT SEKARANG"
-InstantCollectBtn.TextSize = 12
-InstantCollectBtn.Font = Enum.Font.GothamBold
-InstantCollectBtn.Parent = PlantFrame
-
-local InstCorner = Instance.new("UICorner")
-InstCorner.CornerRadius = UDim.new(0, 6)
-InstCorner.Parent = InstantCollectBtn
-
-local PlantInfo = Instance.new("TextLabel")
-PlantInfo.Size = UDim2.new(1, -16, 0, 80)
-PlantInfo.Position = UDim2.new(0, 8, 0, 120)
-PlantInfo.BackgroundTransparency = 1
-PlantInfo.TextColor3 = Color3.fromRGB(140, 140, 180)
-PlantInfo.Text = "Plants:\nGinseng\nSpirit Grass"
-PlantInfo.TextSize = 11
-PlantInfo.Font = Enum.Font.Gotham
-PlantInfo.TextXAlignment = Enum.TextXAlignment.Left
-PlantInfo.TextYAlignment = Enum.TextYAlignment.Top
-PlantInfo.TextWrapped = true
-PlantInfo.Parent = PlantFrame
-
-local NPCInfo = Instance.new("TextLabel")
-NPCInfo.Size = UDim2.new(1, -16, 0, 60)
-NPCInfo.Position = UDim2.new(0, 8, 0, 200)
-NPCInfo.BackgroundTransparency = 1
-NPCInfo.TextColor3 = Color3.fromRGB(140, 140, 180)
-NPCInfo.Text = "NPC:\nScorpion, Tombguardian,\nWater Serpent"
-NPCInfo.TextSize = 10
-NPCInfo.Font = Enum.Font.Gotham
-NPCInfo.TextXAlignment = Enum.TextXAlignment.Left
-NPCInfo.TextYAlignment = Enum.TextYAlignment.Top
-NPCInfo.TextWrapped = true
-NPCInfo.Parent = PlantFrame
-
--- CONSOLE POPUP
-ConsolePopup = Instance.new("Frame")
-ConsolePopup.Size = UDim2.new(0, 340, 0, 260)
-ConsolePopup.Position = UDim2.new(0.5, -170, 0.5, -130)
-ConsolePopup.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
-ConsolePopup.BorderSizePixel = 0
-ConsolePopup.Visible = false
-ConsolePopup.ZIndex = 20
-ConsolePopup.Active = true
-ConsolePopup.Parent = ScreenGui
-
-local ConsolePopupCorner = Instance.new("UICorner")
-ConsolePopupCorner.CornerRadius = UDim.new(0, 10)
-ConsolePopupCorner.Parent = ConsolePopup
-
-local ConsoleTitle = Instance.new("Frame")
-ConsoleTitle.Size = UDim2.new(1, 0, 0, 30)
-ConsoleTitle.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
-ConsoleTitle.BorderSizePixel = 0
-ConsoleTitle.ZIndex = 21
-ConsoleTitle.Active = true
-ConsoleTitle.Parent = ConsolePopup
-
-local ConsoleTitleCorner = Instance.new("UICorner")
-ConsoleTitleCorner.CornerRadius = UDim.new(0, 10)
-ConsoleTitleCorner.Parent = ConsoleTitle
-
-local ConsoleTitleLabel = Instance.new("TextLabel")
-ConsoleTitleLabel.Size = UDim2.new(1, -100, 1, 0)
-ConsoleTitleLabel.Position = UDim2.new(0, 10, 0, 0)
-ConsoleTitleLabel.BackgroundTransparency = 1
-ConsoleTitleLabel.TextColor3 = Color3.fromRGB(0, 220, 130)
-ConsoleTitleLabel.Text = "CONSOLE"
-ConsoleTitleLabel.TextSize = 12
-ConsoleTitleLabel.Font = Enum.Font.GothamBold
-ConsoleTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-ConsoleTitleLabel.ZIndex = 22
-ConsoleTitleLabel.Parent = ConsoleTitle
-
-local ClearBtn = Instance.new("TextButton")
-ClearBtn.Size = UDim2.new(0, 50, 0, 22)
-ClearBtn.Position = UDim2.new(1, -85, 0, 4)
-ClearBtn.BackgroundColor3 = Color3.fromRGB(70, 45, 45)
-ClearBtn.TextColor3 = Color3.fromRGB(255, 200, 200)
-ClearBtn.Text = "CLEAR"
-ClearBtn.TextSize = 10
-ClearBtn.Font = Enum.Font.GothamBold
-ClearBtn.ZIndex = 22
-ClearBtn.Parent = ConsoleTitle
-
-local ClearCorner = Instance.new("UICorner")
-ClearCorner.CornerRadius = UDim.new(0, 4)
-ClearCorner.Parent = ClearBtn
-
-local ConsoleClose = Instance.new("TextButton")
-ConsoleClose.Size = UDim2.new(0, 25, 0, 22)
-ConsoleClose.Position = UDim2.new(1, -28, 0, 4)
-ConsoleClose.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
-ConsoleClose.TextColor3 = Color3.fromRGB(255, 255, 255)
-ConsoleClose.Text = "X"
-ConsoleClose.TextSize = 12
-ConsoleClose.Font = Enum.Font.GothamBold
-ConsoleClose.ZIndex = 22
-ConsoleClose.Parent = ConsoleTitle
-
-local ConsoleCloseCorner = Instance.new("UICorner")
-ConsoleCloseCorner.CornerRadius = UDim.new(0, 4)
-ConsoleCloseCorner.Parent = ConsoleClose
-
-LogScroll = Instance.new("ScrollingFrame")
-LogScroll.Size = UDim2.new(1, -10, 1, -40)
-LogScroll.Position = UDim2.new(0, 5, 0, 35)
-LogScroll.BackgroundTransparency = 1
-LogScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-LogScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-LogScroll.ScrollBarThickness = 4
-LogScroll.ZIndex = 21
-LogScroll.Parent = ConsolePopup
-
-local LogList = Instance.new("UIListLayout")
-LogList.Padding = UDim.new(0, 2)
-LogList.Parent = LogScroll
-
--- NPC LIST POPUP
-local ListPopup = Instance.new("Frame")
-ListPopup.Size = UDim2.new(0, 280, 0, 280)
-ListPopup.Position = UDim2.new(0.5, -140, 0.5, -140)
-ListPopup.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
-ListPopup.BorderSizePixel = 0
-ListPopup.Visible = false
-ListPopup.ZIndex = 20
-ListPopup.Active = true
-ListPopup.Parent = ScreenGui
-
-local ListPopupCorner = Instance.new("UICorner")
-ListPopupCorner.CornerRadius = UDim.new(0, 10)
-ListPopupCorner.Parent = ListPopup
-
-local ListTitle = Instance.new("Frame")
-ListTitle.Size = UDim2.new(1, 0, 0, 30)
-ListTitle.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
-ListTitle.BorderSizePixel = 0
-ListTitle.ZIndex = 21
-ListTitle.Active = true
-ListTitle.Parent = ListPopup
-
-local ListTitleCorner = Instance.new("UICorner")
-ListTitleCorner.CornerRadius = UDim.new(0, 10)
-ListTitleCorner.Parent = ListTitle
-
-local ListTitleLabel = Instance.new("TextLabel")
-ListTitleLabel.Size = UDim2.new(1, -40, 1, 0)
-ListTitleLabel.Position = UDim2.new(0, 10, 0, 0)
-ListTitleLabel.BackgroundTransparency = 1
-ListTitleLabel.TextColor3 = Color3.fromRGB(0, 220, 130)
-ListTitleLabel.Text = "NPC TARGET - TAP TO TELEPORT"
-ListTitleLabel.TextSize = 11
-ListTitleLabel.Font = Enum.Font.GothamBold
-ListTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-ListTitleLabel.ZIndex = 22
-ListTitleLabel.Parent = ListTitle
-
-local ListClose = Instance.new("TextButton")
-ListClose.Size = UDim2.new(0, 25, 0, 22)
-ListClose.Position = UDim2.new(1, -28, 0, 4)
-ListClose.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
-ListClose.TextColor3 = Color3.fromRGB(255, 255, 255)
-ListClose.Text = "X"
-ListClose.TextSize = 12
-ListClose.Font = Enum.Font.GothamBold
-ListClose.ZIndex = 22
-ListClose.Parent = ListTitle
-
-local ListCloseCorner = Instance.new("UICorner")
-ListCloseCorner.CornerRadius = UDim.new(0, 4)
-ListCloseCorner.Parent = ListClose
-
-local ListScroll = Instance.new("ScrollingFrame")
-ListScroll.Size = UDim2.new(1, -10, 1, -40)
-ListScroll.Position = UDim2.new(0, 5, 0, 35)
-ListScroll.BackgroundTransparency = 1
-ListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-ListScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-ListScroll.ScrollBarThickness = 4
-ListScroll.ZIndex = 21
-ListScroll.Parent = ListPopup
-
-local ListLayout = Instance.new("UIListLayout")
-ListLayout.Padding = UDim.new(0, 3)
-ListLayout.Parent = ListScroll
-
-local function refreshNPCList()
-    for _, child in ipairs(ListScroll:GetChildren()) do
-        if child:IsA("TextButton") then
-            child:Destroy()
-        end
+local NEON = Color3.fromRGB(255, 30, 60)
+local DARKRED = Color3.fromRGB(180, 20, 40)
+local MILK = Color3.fromRGB(220, 220, 230)
+local BG = Color3.fromRGB(10, 8, 15)
+local PANEL = Color3.fromRGB(16, 12, 24)
+local GRAYTXT = Color3.fromRGB(150, 150, 165)
+local AMBER = Color3.fromRGB(255, 170, 40)
+local PINK = Color3.fromRGB(255, 130, 170)
+local YELLOW = Color3.fromRGB(255, 240, 60)
+local ORANGE = Color3.fromRGB(255, 140, 0)
+
+local function create(className, props, parent)
+    local obj = Instance.new(className)
+    for k, v in pairs(props) do
+        obj[k] = v
     end
-    
-    local npcs = getAllNPCs()
-    
-    if #npcs == 0 then
-        local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(1, -6, 0, 20)
-        lbl.BackgroundTransparency = 1
-        lbl.TextColor3 = Color3.fromRGB(255, 150, 150)
-        lbl.Text = "No NPC target found"
-        lbl.TextSize = 11
-        lbl.Font = Enum.Font.Gotham
-        lbl.Parent = ListScroll
-        return
+    if parent then
+        obj.Parent = parent
     end
-    
-    for i, npc in ipairs(npcs) do
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1, -6, 0, 28)
-        btn.BackgroundColor3 = Color3.fromRGB(35, 50, 70)
-        btn.TextColor3 = Color3.fromRGB(150, 220, 200)
-        btn.Text = string.format("%d. %s (HP: %d)", i, npc.model.Name, math.floor(npc.humanoid.Health))
-        btn.TextSize = 11
-        btn.Font = Enum.Font.Code
-        btn.ZIndex = 22
-        btn.Parent = ListScroll
-        
-        local bc = Instance.new("UICorner")
-        bc.CornerRadius = UDim.new(0, 4)
-        bc.Parent = btn
-        
-        btn.MouseButton1Click:Connect(function()
-            if npc.model and npc.model.Parent then
-                teleportToNPC(npc)
-                log("Teleport ke: " .. npc.model.Name, Color3.fromRGB(0, 200, 255))
-                ListPopup.Visible = false
-            end
-        end)
-    end
+    return obj
 end
 
--- FLOATING BUBBLE
-local Bubble = Instance.new("TextButton")
-Bubble.Name = "FloatingBubble"
-Bubble.Size = UDim2.new(0, 50, 0, 50)
-Bubble.Position = UDim2.new(0, 20, 0, 100)
-Bubble.BackgroundColor3 = Color3.fromRGB(0, 160, 90)
-Bubble.TextColor3 = Color3.fromRGB(255, 255, 255)
-Bubble.Text = "A"
-Bubble.TextSize = 20
-Bubble.Font = Enum.Font.GothamBold
-Bubble.Visible = false
-Bubble.Active = true
-Bubble.Parent = ScreenGui
+local function lighten(c, a)
+    return c:Lerp(Color3.new(1, 1, 1), a)
+end
 
-local BubbleCorner = Instance.new("UICorner")
-BubbleCorner.CornerRadius = UDim.new(1, 0)
-BubbleCorner.Parent = Bubble
+local function darken(c, a)
+    return c:Lerp(Color3.new(0, 0, 0), a)
+end
 
-local BubbleStroke = Instance.new("UIStroke")
-BubbleStroke.Color = Color3.fromRGB(0, 220, 130)
-BubbleStroke.Thickness = 2
-BubbleStroke.Parent = Bubble
+local function addCorner(obj, radius)
+    return create("UICorner", {CornerRadius = UDim.new(0, radius)}, obj)
+end
 
--- DRAGGABLE
-local function makeDraggable(frame, dragHandle)
-    dragHandle = dragHandle or frame
+local function addStroke(obj, color, thickness, transparency)
+    return create("UIStroke", {
+        Color = color,
+        Thickness = thickness,
+        Transparency = transparency or 0,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+    }, obj)
+end
+
+local function addTextGlow(label, color, transparency)
+    return create("UIStroke", {
+        Color = color,
+        Thickness = 1,
+        Transparency = transparency or 0.6,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual,
+    }, label)
+end
+
+local function addGradient(obj, colorSeq, rotation)
+    return create("UIGradient", {Color = colorSeq, Rotation = rotation or 0}, obj)
+end
+
+local function spaced(text)
+    local out = {}
+    for i = 1, #text do
+        out[#out + 1] = text:sub(i, i)
+    end
+    return table.concat(out, " ")
+end
+
+local function animateGlow(stroke, minT, maxT, duration)
+    stroke.Transparency = minT
+    local info = TweenInfo.new(duration, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+    local tween = TweenService:Create(stroke, info, {Transparency = maxT})
+    tween:Play()
+    return tween
+end
+
+local function applyHover(btn, normalColor, hoverColor)
+    btn:SetAttribute("NormalColor", normalColor)
+    btn:SetAttribute("HoverColor", hoverColor)
+    btn:SetAttribute("Hovered", false)
+    btn.MouseEnter:Connect(function()
+        btn:SetAttribute("Hovered", true)
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = hoverColor}):Play()
+    end)
+    btn.MouseLeave:Connect(function()
+        btn:SetAttribute("Hovered", false)
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = normalColor}):Play()
+    end)
+end
+
+local function applyPress(btn)
+    local baseSize = btn.Size
+    local basePos = btn.Position
+    local info = TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
     
+    btn.MouseButton1Down:Connect(function()
+        local normal = btn:GetAttribute("NormalColor") or btn.BackgroundColor3
+        TweenService:Create(btn, info, {
+            Size = UDim2.new(baseSize.X.Scale, baseSize.X.Offset - 4, baseSize.Y.Scale, baseSize.Y.Offset - 4),
+            Position = UDim2.new(basePos.X.Scale, basePos.X.Offset + 2, basePos.Y.Scale, basePos.Y.Offset + 2),
+            BackgroundColor3 = darken(normal, 0.25),
+        }):Play()
+    end)
+    
+    local function release()
+        local normal = btn:GetAttribute("NormalColor") or btn.BackgroundColor3
+        local hover = btn:GetAttribute("HoverColor") or normal
+        local target = btn:GetAttribute("Hovered") and hover or normal
+        TweenService:Create(btn, info, {
+            Size = baseSize,
+            Position = basePos,
+            BackgroundColor3 = target,
+        }):Play()
+    end
+    
+    btn.MouseButton1Up:Connect(release)
+    btn.MouseLeave:Connect(release)
+end
+
+local function makeDraggable(frame, dragHandle)
     local dragging = false
     local dragStart = nil
     local startPos = nil
     
     dragHandle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 
+        if input.UserInputType == Enum.UserInputType.MouseButton1
             or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             dragStart = input.Position
             startPos = frame.Position
-            
+            frame:SetAttribute("WasDragged", false)
             input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
                     dragging = false
@@ -1182,106 +715,561 @@ local function makeDraggable(frame, dragHandle)
     end)
     
     UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement 
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
             or input.UserInputType == Enum.UserInputType.Touch) then
             local delta = input.Position - dragStart
+            if delta.Magnitude > 4 then
+                frame:SetAttribute("WasDragged", true)
+            end
             frame.Position = UDim2.new(
-                startPos.X.Scale, 
-                startPos.X.Offset + delta.X,
-                startPos.Y.Scale, 
-                startPos.Y.Offset + delta.Y
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
             )
         end
     end)
 end
 
+local BUTTON_STYLES = {
+    primary = {bg = NEON, text = Color3.new(1, 1, 1), stroke = NEON, strokeT = 0.2, transp = 0, font = Enum.Font.GothamBold, gradient = true, pulse = true},
+    outlineRed = {bg = DARKRED, text = NEON, stroke = NEON, strokeT = 0.3, transp = 0.85, font = Enum.Font.GothamBold},
+    outlineWhite = {bg = MILK, text = MILK, stroke = MILK, strokeT = 0.4, transp = 0.9, font = Enum.Font.GothamBold},
+    gray = {bg = Color3.fromRGB(34, 34, 44), text = Color3.fromRGB(200, 200, 210), stroke = Color3.fromRGB(70, 70, 85), strokeT = 0.2, transp = 0, font = Enum.Font.GothamBold},
+    darkRed = {bg = Color3.fromRGB(90, 12, 26), text = MILK, stroke = DARKRED, strokeT = 0.3, transp = 0, font = Enum.Font.GothamBold},
+}
+
+local function makeButton(parent, text, position, size, styleName, textSize)
+    local st = BUTTON_STYLES[styleName]
+    local btn = create("TextButton", {
+        Text = text,
+        Position = position,
+        Size = size,
+        BackgroundColor3 = st.bg,
+        BackgroundTransparency = st.transp,
+        TextColor3 = st.text,
+        Font = st.font,
+        TextSize = textSize or 13,
+        AutoButtonColor = false,
+        BorderSizePixel = 0,
+    }, parent)
+    addCorner(btn, 8)
+    local stroke = addStroke(btn, st.stroke, 2, st.strokeT)
+    if st.gradient then
+        addGradient(btn, ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(165, 165, 165)), 45)
+    end
+    if st.pulse then
+        animateGlow(stroke, 0.05, 0.65, 1.1)
+    end
+    applyHover(btn, st.bg, lighten(st.bg, 0.2))
+    applyPress(btn)
+    return btn
+end
+
+-- ScreenGui
+local playerGui = player:WaitForChild("PlayerGui")
+local oldGui = playerGui:FindFirstChild("CyberGameTool")
+if oldGui then oldGui:Destroy() end
+local oldGui2 = playerGui:FindFirstChild("AutofarmGUI")
+if oldGui2 then oldGui2:Destroy() end
+
+local ScreenGui = create("ScreenGui", {
+    Name = "CyberGameTool",
+    ResetOnSpawn = false,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    DisplayOrder = 50,
+}, playerGui)
+
+-- MAIN FRAME
+local MainFrame = create("Frame", {
+    Name = "MainFrame",
+    Size = UDim2.new(0, 760, 0, 320),
+    Position = UDim2.new(0.5, -380, 0.5, -160),
+    BackgroundColor3 = BG,
+    BorderSizePixel = 0,
+    ClipsDescendants = true,
+}, ScreenGui)
+addCorner(MainFrame, 10)
+local mainStroke = addStroke(MainFrame, NEON, 2, 0.1)
+animateGlow(mainStroke, 0.05, 0.6, 1.5)
+
+-- Scanlines
+local ScanContainer = create("Frame", {
+    Name = "Scanlines",
+    Size = UDim2.new(1, 0, 1, 0),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    ClipsDescendants = true,
+    Active = false,
+}, MainFrame)
+for y = 20, 320, 20 do
+    create("Frame", {
+        Size = UDim2.new(1, 0, 0, 1),
+        Position = UDim2.new(0, 0, 0, y),
+        BackgroundColor3 = NEON,
+        BackgroundTransparency = 0.85,
+        BorderSizePixel = 0,
+    }, ScanContainer)
+end
+local ScanSweep = create("Frame", {
+    Size = UDim2.new(1, 0, 0, 3),
+    Position = UDim2.new(0, 0, 0, 42),
+    BackgroundColor3 = NEON,
+    BackgroundTransparency = 0.88,
+    BorderSizePixel = 0,
+}, ScanContainer)
+addGradient(ScanSweep, ColorSequence.new(DARKRED, NEON), 0)
+TweenService:Create(
+    ScanSweep,
+    TweenInfo.new(3.5, Enum.EasingStyle.Linear, Enum.EasingDirection.In, -1, false),
+    {Position = UDim2.new(0, 0, 0, 320)}
+):Play()
+
+-- TITLE BAR
+local TitleBar = create("Frame", {
+    Name = "TitleBar",
+    Size = UDim2.new(1, 0, 0, 40),
+    BackgroundColor3 = Color3.new(1, 1, 1),
+    BorderSizePixel = 0,
+}, MainFrame)
+addCorner(TitleBar, 10)
+local titleSeq = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(90, 10, 25)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(215, 28, 55)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(90, 10, 25)),
+})
+addGradient(TitleBar, titleSeq, 0)
+
+local TitleFill = create("Frame", {
+    Size = UDim2.new(1, 0, 0, 10),
+    Position = UDim2.new(0, 0, 1, -10),
+    BackgroundColor3 = Color3.new(1, 1, 1),
+    BorderSizePixel = 0,
+}, TitleBar)
+addGradient(TitleFill, titleSeq, 0)
+
+create("TextLabel", {
+    Name = "TitleShadow",
+    Text = "AUTOFARM v6.1 - by ADIEL",
+    Position = UDim2.new(0, 16, 0, 5),
+    Size = UDim2.new(1, -120, 0, 22),
+    BackgroundTransparency = 1,
+    TextColor3 = NEON,
+    TextTransparency = 0.5,
+    Font = Enum.Font.GothamBold,
+    TextSize = 16,
+    TextXAlignment = Enum.TextXAlignment.Left,
+}, TitleBar)
+
+local TitleText = create("TextLabel", {
+    Name = "TitleText",
+    Text = "AUTOFARM v6.1 - by ADIEL",
+    Position = UDim2.new(0, 14, 0, 3),
+    Size = UDim2.new(1, -120, 0, 22),
+    BackgroundTransparency = 1,
+    TextColor3 = Color3.new(1, 1, 1),
+    Font = Enum.Font.GothamBold,
+    TextSize = 16,
+    TextXAlignment = Enum.TextXAlignment.Left,
+}, TitleBar)
+addTextGlow(TitleText, NEON, 0.55)
+
+local SubTitle = create("TextLabel", {
+    Name = "SubTitle",
+    Text = spaced("CYBER EDITION"),
+    Position = UDim2.new(0, 14, 0, 25),
+    Size = UDim2.new(1, -120, 0, 12),
+    BackgroundTransparency = 1,
+    TextColor3 = NEON,
+    Font = Enum.Font.GothamBold,
+    TextSize = 9,
+    TextXAlignment = Enum.TextXAlignment.Left,
+}, TitleBar)
+create("UIStroke", {
+    Color = Color3.fromRGB(20, 0, 5),
+    Thickness = 1,
+    Transparency = 0.3,
+    ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual,
+}, SubTitle)
+
+local MinimizeBtn = create("TextButton", {
+    Name = "MinimizeBtn",
+    Text = "_",
+    Position = UDim2.new(1, -72, 0, 8),
+    Size = UDim2.new(0, 28, 0, 24),
+    BackgroundColor3 = Color3.fromRGB(45, 45, 55),
+    TextColor3 = MILK,
+    Font = Enum.Font.GothamBold,
+    TextSize = 14,
+    AutoButtonColor = false,
+    BorderSizePixel = 0,
+}, TitleBar)
+addCorner(MinimizeBtn, 6)
+addStroke(MinimizeBtn, Color3.fromRGB(90, 90, 105), 1, 0.2)
+applyHover(MinimizeBtn, Color3.fromRGB(45, 45, 55), Color3.fromRGB(70, 70, 85))
+applyPress(MinimizeBtn)
+
+local CloseBtn = create("TextButton", {
+    Name = "CloseBtn",
+    Text = "X",
+    Position = UDim2.new(1, -38, 0, 8),
+    Size = UDim2.new(0, 28, 0, 24),
+    BackgroundColor3 = NEON,
+    TextColor3 = Color3.new(1, 1, 1),
+    Font = Enum.Font.GothamBold,
+    TextSize = 14,
+    AutoButtonColor = false,
+    BorderSizePixel = 0,
+}, TitleBar)
+addCorner(CloseBtn, 6)
+local closeStroke = addStroke(CloseBtn, NEON, 2, 0.2)
+animateGlow(closeStroke, 0.1, 0.7, 1.2)
+applyHover(CloseBtn, NEON, lighten(NEON, 0.2))
+applyPress(CloseBtn)
+
+local TitleAccent = create("Frame", {
+    Name = "TitleAccent",
+    Size = UDim2.new(1, 0, 0, 2),
+    Position = UDim2.new(0, 0, 0, 40),
+    BackgroundColor3 = NEON,
+    BorderSizePixel = 0,
+}, MainFrame)
+local accentStroke = create("UIStroke", {
+    Color = NEON,
+    Thickness = 2,
+    Transparency = 0.2,
+    ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+}, TitleAccent)
+animateGlow(accentStroke, 0.1, 0.8, 1.3)
+
+task.spawn(function()
+    while TitleText.Parent do
+        TweenService:Create(TitleText, TweenInfo.new(0.08), {TextTransparency = 0.1}):Play()
+        task.wait(0.08)
+        TweenService:Create(TitleText, TweenInfo.new(0.08), {TextTransparency = 0}):Play()
+        task.wait(1.84)
+    end
+end)
+
 makeDraggable(MainFrame, TitleBar)
-makeDraggable(Bubble, Bubble)
+
+-- BODY
+local Body = create("Frame", {
+    Name = "Body",
+    Position = UDim2.new(0, 0, 0, 42),
+    Size = UDim2.new(1, 0, 1, -42),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+}, MainFrame)
+
+local function makeColumn(name, x)
+    local col = create("Frame", {
+        Name = name,
+        Position = UDim2.new(0, x, 0, 8),
+        Size = UDim2.new(0, 240, 1, -16),
+        BackgroundColor3 = PANEL,
+        BackgroundTransparency = 0.25,
+        BorderSizePixel = 0,
+    }, Body)
+    addCorner(col, 8)
+    addStroke(col, DARKRED, 1, 0.5)
+    return col
+end
+
+local function makeHeader(parent, text)
+    local header = create("TextLabel", {
+        Text = text,
+        Position = UDim2.new(0, 10, 0, 8),
+        Size = UDim2.new(1, -20, 0, 22),
+        BackgroundTransparency = 1,
+        TextColor3 = NEON,
+        Font = Enum.Font.GothamBold,
+        TextSize = 15,
+        TextXAlignment = Enum.TextXAlignment.Left,
+    }, parent)
+    addTextGlow(header, NEON, 0.6)
+    local line = create("Frame", {
+        Position = UDim2.new(0, 10, 0, 34),
+        Size = UDim2.new(1, -20, 0, 2),
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BorderSizePixel = 0,
+    }, parent)
+    addGradient(line, ColorSequence.new(NEON, Color3.fromRGB(60, 8, 18)), 0)
+    return header
+end
+
+local function makeStatLabel(parent, text, y, h, size, color, font, glow)
+    local lbl = create("TextLabel", {
+        Text = text,
+        Position = UDim2.new(0, 10, 0, y),
+        Size = UDim2.new(1, -20, 0, h),
+        BackgroundTransparency = 1,
+        TextColor3 = color,
+        Font = font or Enum.Font.Gotham,
+        TextSize = size,
+        TextXAlignment = Enum.TextXAlignment.Left,
+    }, parent)
+    if glow then
+        addTextGlow(lbl, NEON, 0.5)
+    end
+    return lbl
+end
+
+local function makeInfoBlock(parent, text, y)
+    local block = create("TextLabel", {
+        Text = text,
+        Position = UDim2.new(0, 10, 0, y),
+        Size = UDim2.new(1, -20, 0, 52),
+        BackgroundColor3 = Color3.fromRGB(50, 8, 18),
+        BackgroundTransparency = 0.2,
+        TextColor3 = MILK,
+        Font = Enum.Font.Gotham,
+        TextSize = 12,
+        TextWrapped = true,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        BorderSizePixel = 0,
+    }, parent)
+    addCorner(block, 6)
+    addStroke(block, NEON, 1, 0.5)
+    create("UIPadding", {
+        PaddingLeft = UDim.new(0, 10),
+        PaddingRight = UDim.new(0, 10),
+    }, block)
+    return block
+end
+
+-- KOLOM 1 - STATISTIK
+local StatsCol = makeColumn("StatsColumn", 10)
+makeHeader(StatsCol, "STATISTIK")
+
+local KillsLabel = makeStatLabel(StatsCol, "Kills: 0", 42, 38, 28, Color3.new(1, 1, 1), Enum.Font.GothamBold, true)
+local KPMLabel = makeStatLabel(StatsCol, "KPM: 0", 84, 20, 14, AMBER, Enum.Font.GothamBold)
+local NPCCountLabel = makeStatLabel(StatsCol, "NPC Detected: 0", 106, 20, 14, Color3.fromRGB(190, 190, 200), Enum.Font.GothamBold)
+local PlantCountLabel = makeStatLabel(StatsCol, "Plants: 0", 128, 20, 14, PINK, Enum.Font.GothamBold)
+local RewardCountLabel = makeStatLabel(StatsCol, "Rewards: 0", 150, 20, 14, YELLOW, Enum.Font.GothamBold)
+
+makeStatLabel(StatsCol, "HP", 174, 14, 11, GRAYTXT, Enum.Font.GothamBold)
+local HPBarBack = create("Frame", {
+    Name = "HPBarBack",
+    Position = UDim2.new(0, 10, 0, 190),
+    Size = UDim2.new(1, -20, 0, 12),
+    BackgroundColor3 = Color3.fromRGB(22, 16, 30),
+    BorderSizePixel = 0,
+}, StatsCol)
+addCorner(HPBarBack, 6)
+addStroke(HPBarBack, DARKRED, 1, 0.4)
+local HPBarFill = create("Frame", {
+    Name = "HPBarFill",
+    Size = UDim2.new(1, 0, 1, 0),
+    BackgroundColor3 = Color3.new(1, 1, 1),
+    BorderSizePixel = 0,
+}, HPBarBack)
+addCorner(HPBarFill, 6)
+addGradient(HPBarFill, ColorSequence.new(NEON, ORANGE), 0)
+
+local StatusLabel = create("TextLabel", {
+    Name = "StatusLabel",
+    Text = "Farm: IDLE\nPlant: IDLE",
+    Position = UDim2.new(0, 10, 0, 210),
+    Size = UDim2.new(1, -20, 0, 40),
+    BackgroundTransparency = 1,
+    TextColor3 = GRAYTXT,
+    Font = Enum.Font.GothamBold,
+    TextSize = 13,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top,
+}, StatsCol)
+
+-- KOLOM 2 - AUTOFARM
+local FarmCol = makeColumn("FarmColumn", 260)
+makeHeader(FarmCol, "AUTOFARM")
+
+local btnSize = UDim2.new(1, -20, 0, 36)
+local StartFarmBtn = makeButton(FarmCol, "START AUTOFARM", UDim2.new(0, 10, 0, 44), btnSize, "primary", 14)
+local TeleportBtn = makeButton(FarmCol, "TELEPORT KE MOB", UDim2.new(0, 10, 0, 88), btnSize, "outlineRed", 13)
+local ListNPCBtn = makeButton(FarmCol, "LIST NPC TARGET", UDim2.new(0, 10, 0, 132), btnSize, "outlineWhite", 13)
+local RescanBtn = makeButton(FarmCol, "RESCAN NPC", UDim2.new(0, 10, 0, 176), btnSize, "gray", 13)
+local ConsoleBtn = makeButton(FarmCol, "OPEN CONSOLE", UDim2.new(0, 10, 0, 220), btnSize, "darkRed", 13)
+
+-- KOLOM 3 - PLANT COLLECTOR
+local PlantCol = makeColumn("PlantColumn", 510)
+makeHeader(PlantCol, "PLANT COLLECTOR")
+
+local StartPlantBtn = makeButton(PlantCol, "START PLANT COLLECTOR", UDim2.new(0, 10, 0, 44), btnSize, "primary", 13)
+local InstantCollectBtn = makeButton(PlantCol, "COLLECT SEKARANG", UDim2.new(0, 10, 0, 88), btnSize, "outlineRed", 13)
+makeInfoBlock(PlantCol, "Plants: Ginseng, Spirit Grass, Essence Leaf", 136)
+makeInfoBlock(PlantCol, "NPC: Scorpion, Tombguardian, Water Serpent", 196)
+
+-- CONSOLE POPUP
+ConsolePopup = create("Frame", {
+    Name = "ConsolePopup",
+    Size = UDim2.new(0, 360, 0, 280),
+    Position = UDim2.new(0.5, -180, 0.5, -140),
+    BackgroundColor3 = BG,
+    BorderSizePixel = 0,
+    Visible = false,
+    ClipsDescendants = true,
+    ZIndex = 20,
+}, ScreenGui)
+addCorner(ConsolePopup, 10)
+local consoleStroke = addStroke(ConsolePopup, NEON, 2, 0.1)
+animateGlow(consoleStroke, 0.05, 0.6, 1.5)
+
+local ConsoleTitle = create("Frame", {
+    Name = "ConsoleTitle",
+    Size = UDim2.new(1, 0, 0, 30),
+    BackgroundColor3 = Color3.new(1, 1, 1),
+    BorderSizePixel = 0,
+    ZIndex = 21,
+}, ConsolePopup)
+addCorner(ConsoleTitle, 10)
+addGradient(ConsoleTitle, titleSeq, 0)
+local ConsoleTitleFill = create("Frame", {
+    Size = UDim2.new(1, 0, 0, 10),
+    Position = UDim2.new(0, 0, 1, -10),
+    BackgroundColor3 = Color3.new(1, 1, 1),
+    BorderSizePixel = 0,
+    ZIndex = 21,
+}, ConsoleTitle)
+addGradient(ConsoleTitleFill, titleSeq, 0)
+
+local consoleText = create("TextLabel", {
+    Text = "CONSOLE",
+    Position = UDim2.new(0, 12, 0, 0),
+    Size = UDim2.new(0, 120, 1, 0),
+    BackgroundTransparency = 1,
+    TextColor3 = Color3.new(1, 1, 1),
+    Font = Enum.Font.GothamBold,
+    TextSize = 14,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    ZIndex = 22,
+}, ConsoleTitle)
+addTextGlow(consoleText, NEON, 0.5)
+
+local ClearBtn = create("TextButton", {
+    Name = "ClearBtn",
+    Text = "CLEAR",
+    Position = UDim2.new(1, -96, 0, 5),
+    Size = UDim2.new(0, 54, 0, 20),
+    BackgroundColor3 = DARKRED,
+    BackgroundTransparency = 0.6,
+    TextColor3 = Color3.new(1, 1, 1),
+    Font = Enum.Font.GothamBold,
+    TextSize = 10,
+    AutoButtonColor = false,
+    BorderSizePixel = 0,
+    ZIndex = 22,
+}, ConsoleTitle)
+addCorner(ClearBtn, 5)
+addStroke(ClearBtn, NEON, 1, 0.2)
+applyHover(ClearBtn, DARKRED, lighten(DARKRED, 0.2))
+applyPress(ClearBtn)
+
+local ConsoleCloseBtn = create("TextButton", {
+    Name = "ConsoleCloseBtn",
+    Text = "X",
+    Position = UDim2.new(1, -34, 0, 5),
+    Size = UDim2.new(0, 26, 0, 20),
+    BackgroundColor3 = NEON,
+    TextColor3 = Color3.new(1, 1, 1),
+    Font = Enum.Font.GothamBold,
+    TextSize = 12,
+    AutoButtonColor = false,
+    BorderSizePixel = 0,
+    ZIndex = 22,
+}, ConsoleTitle)
+addCorner(ConsoleCloseBtn, 5)
+addStroke(ConsoleCloseBtn, NEON, 1, 0.3)
+applyHover(ConsoleCloseBtn, NEON, lighten(NEON, 0.2))
+applyPress(ConsoleCloseBtn)
+
+create("Frame", {
+    Position = UDim2.new(0, 0, 0, 30),
+    Size = UDim2.new(1, 0, 0, 2),
+    BackgroundColor3 = NEON,
+    BorderSizePixel = 0,
+    ZIndex = 21,
+}, ConsolePopup)
+
+local LogContainer = create("Frame", {
+    Name = "LogContainer",
+    Position = UDim2.new(0, 8, 0, 40),
+    Size = UDim2.new(1, -16, 1, -48),
+    BackgroundColor3 = Color3.fromRGB(5, 4, 8),
+    BorderSizePixel = 0,
+    ZIndex = 21,
+}, ConsolePopup)
+addCorner(LogContainer, 6)
+addStroke(LogContainer, DARKRED, 1, 0.4)
+
+LogScroll = create("ScrollingFrame", {
+    Name = "LogScroll",
+    Position = UDim2.new(0, 4, 0, 4),
+    Size = UDim2.new(1, -8, 1, -8),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    ScrollBarThickness = 4,
+    ScrollBarImageColor3 = NEON,
+    CanvasSize = UDim2.new(0, 0, 0, 0),
+    AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    ZIndex = 22,
+}, LogContainer)
+create("UIListLayout", {
+    Padding = UDim.new(0, 2),
+    SortOrder = Enum.SortOrder.LayoutOrder,
+}, LogScroll)
+
 makeDraggable(ConsolePopup, ConsoleTitle)
-makeDraggable(ListPopup, ListTitle)
 
--- REAL-TIME STATS UPDATE
-task.spawn(function()
-    while task.wait(0.5) do
-        if humanoid and humanoid.Parent then
-            local hpPct = humanoid.Health / humanoid.MaxHealth
-            HPBarFill.Size = UDim2.new(math.max(0, hpPct), 0, 1, 0)
-            
-            if hpPct < 0.3 then
-                HPBarFill.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
-            elseif hpPct < 0.6 then
-                HPBarFill.BackgroundColor3 = Color3.fromRGB(220, 180, 60)
-            else
-                HPBarFill.BackgroundColor3 = Color3.fromRGB(0, 220, 100)
-            end
-        end
-        
-        KillsLabel.Text = "Kills: " .. stats.kills
-        PlantCountLabel.Text = "Plants: " .. stats.collectedPlants
-        RewardCountLabel.Text = "Rewards: " .. stats.claimedRewards
-        
-        if stats.startTime > 0 and isRunning then
-            local elapsed = tick() - stats.startTime
-            if elapsed > 5 then
-                local kpm = math.floor((stats.kills / elapsed) * 60)
-                KPM.Text = "KPM: " .. kpm
-            end
-        else
-            KPM.Text = "KPM: 0"
-        end
-    end
-end)
+-- FLOATING BUBBLE
+local Bubble = create("TextButton", {
+    Name = "Bubble",
+    Text = "A",
+    Size = UDim2.new(0, 50, 0, 50),
+    Position = UDim2.new(0.5, -380, 0.5, -160),
+    BackgroundColor3 = BG,
+    TextColor3 = NEON,
+    Font = Enum.Font.GothamBold,
+    TextSize = 24,
+    AutoButtonColor = false,
+    BorderSizePixel = 0,
+    Visible = false,
+    ZIndex = 30,
+}, ScreenGui)
+addCorner(Bubble, 25)
+addStroke(Bubble, MILK, 1, 0.3)
 
-task.spawn(function()
-    while task.wait(CONFIG.SCAN_INTERVAL) do
-        local npcs = getAllNPCs()
-        CountLabel.Text = "NPC Detected: " .. #npcs
-    end
-end)
+local BubbleGlow = create("Frame", {
+    Name = "BubbleGlow",
+    Position = UDim2.new(0, -4, 0, -4),
+    Size = UDim2.new(1, 8, 1, 8),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    Active = false,
+    ZIndex = 29,
+}, Bubble)
+addCorner(BubbleGlow, 29)
+local bubbleStroke = addStroke(BubbleGlow, NEON, 3, 0.1)
+animateGlow(bubbleStroke, 0.05, 0.75, 1.0)
 
--- EVENT HANDLERS
-ToggleButton.MouseButton1Click:Connect(function()
+makeDraggable(Bubble, Bubble)
+
+-- ============================================================
+-- CALLBACK WIRING
+-- ============================================================
+StartFarmBtn.MouseButton1Click:Connect(function()
     if isRunning then
         stopAutoFarm()
-        ToggleButton.Text = "START AUTOFARM"
-        ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 160, 0)
-        StatusLabel.Text = "Farm: IDLE\nPlant: " .. (isCollectingPlants and "RUNNING" or "IDLE")
-        StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+        StartFarmBtn.Text = "START AUTOFARM"
+        StartFarmBtn.BackgroundColor3 = NEON
+        StartFarmBtn:SetAttribute("NormalColor", NEON)
+        StartFarmBtn:SetAttribute("HoverColor", lighten(NEON, 0.2))
     else
         startAutoFarm()
-        ToggleButton.Text = "STOP AUTOFARM"
-        ToggleButton.BackgroundColor3 = Color3.fromRGB(160, 0, 0)
-        StatusLabel.Text = "Farm: RUNNING\nPlant: " .. (isCollectingPlants and "RUNNING" or "IDLE")
-        StatusLabel.TextColor3 = Color3.fromRGB(0, 220, 100)
+        StartFarmBtn.Text = "STOP AUTOFARM"
+        local dark = Color3.fromRGB(90, 12, 26)
+        StartFarmBtn.BackgroundColor3 = dark
+        StartFarmBtn:SetAttribute("NormalColor", dark)
+        StartFarmBtn:SetAttribute("HoverColor", lighten(dark, 0.2))
     end
-end)
-
-PlantToggleBtn.MouseButton1Click:Connect(function()
-    if isCollectingPlants then
-        stopPlantCollector()
-        PlantToggleBtn.Text = "START PLANT COLLECTOR"
-        PlantToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 130, 70)
-        StatusLabel.Text = "Farm: " .. (isRunning and "RUNNING" or "IDLE") .. "\nPlant: IDLE"
-    else
-        startPlantCollector()
-        PlantToggleBtn.Text = "STOP PLANT COLLECTOR"
-        PlantToggleBtn.BackgroundColor3 = Color3.fromRGB(130, 60, 0)
-        StatusLabel.Text = "Farm: " .. (isRunning and "RUNNING" or "IDLE") .. "\nPlant: RUNNING"
-    end
-end)
-
-InstantCollectBtn.MouseButton1Click:Connect(function()
-    InstantCollectBtn.Text = "COLLECTING..."
-    InstantCollectBtn.BackgroundColor3 = Color3.fromRGB(50, 100, 30)
-    
-    local count, types = collectAllPlantsStealth()
-    stats.collectedPlants = stats.collectedPlants + count
-    PlantCountLabel.Text = "Plants: " .. stats.collectedPlants
-    
-    InstantCollectBtn.Text = "+" .. count
-    task.wait(1)
-    InstantCollectBtn.Text = "COLLECT SEKARANG"
-    InstantCollectBtn.BackgroundColor3 = Color3.fromRGB(70, 160, 50)
 end)
 
 TeleportBtn.MouseButton1Click:Connect(function()
@@ -1298,25 +1286,58 @@ TeleportBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-ListBtn.MouseButton1Click:Connect(function()
-    refreshNPCList()
-    ListPopup.Visible = not ListPopup.Visible
-end)
-
-ListClose.MouseButton1Click:Connect(function()
-    ListPopup.Visible = false
+ListNPCBtn.MouseButton1Click:Connect(function()
+    local npcs = getAllNPCs()
+    log("NPC List: " .. #npcs .. " found", Color3.fromRGB(0, 200, 255))
+    for i, npc in ipairs(npcs) do
+        log(string.format("%d. %s (HP: %d) [%.0f studs]",
+            i, npc.model.Name, math.floor(npc.humanoid.Health), npc.distance))
+    end
+    ConsolePopup.Visible = true
 end)
 
 RescanBtn.MouseButton1Click:Connect(function()
     RescanBtn.Text = "SCANNING..."
     task.wait(0.1)
     local npcs = getAllNPCs()
-    CountLabel.Text = "NPC Detected: " .. #npcs
+    cachedNPCCount = #npcs
+    NPCCountLabel.Text = "NPC Detected: " .. cachedNPCCount
     RescanBtn.Text = "RESCAN NPC"
 end)
 
+StartPlantBtn.MouseButton1Click:Connect(function()
+    if isCollectingPlants then
+        stopPlantCollector()
+        StartPlantBtn.Text = "START PLANT COLLECTOR"
+        StartPlantBtn.BackgroundColor3 = NEON
+        StartPlantBtn:SetAttribute("NormalColor", NEON)
+        StartPlantBtn:SetAttribute("HoverColor", lighten(NEON, 0.2))
+    else
+        startPlantCollector()
+        StartPlantBtn.Text = "STOP PLANT COLLECTOR"
+        local dark = Color3.fromRGB(90, 12, 26)
+        StartPlantBtn.BackgroundColor3 = dark
+        StartPlantBtn:SetAttribute("NormalColor", dark)
+        StartPlantBtn:SetAttribute("HoverColor", lighten(dark, 0.2))
+    end
+end)
+
+InstantCollectBtn.MouseButton1Click:Connect(function()
+    InstantCollectBtn.Text = "COLLECTING..."
+    local count, types = collectAllPlantsStealth()
+    stats.collectedPlants = stats.collectedPlants + count
+    InstantCollectBtn.Text = "+" .. count
+    task.wait(1)
+    InstantCollectBtn.Text = "COLLECT SEKARANG"
+end)
+
+-- Console toggle
 ConsoleBtn.MouseButton1Click:Connect(function()
     ConsolePopup.Visible = not ConsolePopup.Visible
+end)
+
+ConsoleCloseBtn.MouseButton1Click:Connect(function()
+    ConsolePopup.Visible = false
 end)
 
 ClearBtn.MouseButton1Click:Connect(function()
@@ -1325,23 +1346,22 @@ ClearBtn.MouseButton1Click:Connect(function()
             child:Destroy()
         end
     end
-    logCount = 0
+    logOrder = 0
 end)
 
-ConsoleClose.MouseButton1Click:Connect(function()
-    ConsolePopup.Visible = false
-end)
-
-MinBtn.MouseButton1Click:Connect(function()
+-- Minimize
+MinimizeBtn.MouseButton1Click:Connect(function()
+    local info = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
     if MainFrame.Size.Y.Offset > 50 then
-        MainFrame.Size = UDim2.new(0, 720, 0, 35)
-        MinBtn.Text = "o"
+        TweenService:Create(MainFrame, info, {Size = UDim2.new(0, 760, 0, 40)}):Play()
+        MinimizeBtn.Text = "o"
     else
-        MainFrame.Size = UDim2.new(0, 720, 0, 300)
-        MinBtn.Text = "_"
+        TweenService:Create(MainFrame, info, {Size = UDim2.new(0, 760, 0, 320)}):Play()
+        MinimizeBtn.Text = "_"
     end
 end)
 
+-- Close -> bubble
 CloseBtn.MouseButton1Click:Connect(function()
     MainFrame.Visible = false
     Bubble.Position = MainFrame.Position
@@ -1349,12 +1369,52 @@ CloseBtn.MouseButton1Click:Connect(function()
 end)
 
 Bubble.MouseButton1Click:Connect(function()
+    if Bubble:GetAttribute("WasDragged") then
+        return
+    end
     MainFrame.Visible = true
     Bubble.Visible = false
 end)
 
 -- ============================================================
--- ANTI-AFK (VERSI LO)
+-- REAL-TIME STATS UPDATE
+-- ============================================================
+task.spawn(function()
+    while task.wait(0.5) do
+        if humanoid and humanoid.Parent then
+            local ratio = math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1)
+            TweenService:Create(HPBarFill, TweenInfo.new(0.2), {Size = UDim2.new(ratio, 0, 1, 0)}):Play()
+        end
+        
+        KillsLabel.Text = "Kills: " .. stats.kills
+        PlantCountLabel.Text = "Plants: " .. stats.collectedPlants
+        RewardCountLabel.Text = "Rewards: " .. stats.claimedRewards
+        
+        local kpm = 0
+        if stats.startTime > 0 and isRunning then
+            local elapsed = tick() - stats.startTime
+            if elapsed > 5 then
+                kpm = math.floor((stats.kills / elapsed) * 60)
+            end
+        end
+        KPMLabel.Text = "KPM: " .. kpm
+        
+        StatusLabel.Text = "Farm: " .. (isRunning and "ACTIVE" or "IDLE")
+            .. "\nPlant: " .. (isCollectingPlants and "ACTIVE" or "IDLE")
+        StatusLabel.TextColor3 = (isRunning or isCollectingPlants) and NEON or GRAYTXT
+    end
+end)
+
+task.spawn(function()
+    while task.wait(CONFIG.SCAN_INTERVAL) do
+        local npcs = getAllNPCs()
+        cachedNPCCount = #npcs
+        NPCCountLabel.Text = "NPC Detected: " .. cachedNPCCount
+    end
+end)
+
+-- ============================================================
+-- ANTI-AFK
 -- ============================================================
 player.Idled:Connect(function()
     pcall(function()
@@ -1382,7 +1442,6 @@ local function isClaimButton(obj)
     if obj:IsA("TextButton") then
         textLower = string.lower(obj.Text or "")
     end
-    
     return string.find(nameLower, "claim") 
         or string.find(nameLower, "collect")
         or string.find(textLower, "claim")
@@ -1391,37 +1450,32 @@ end
 
 local function claimIn(obj)
     local claimed = 0
-    
     if obj:IsA("GuiButton") then
         pressButton(obj)
         claimed = claimed + 1
     end
-    
     for _, d in ipairs(obj:GetDescendants()) do
         if d:IsA("GuiButton") and isClaimButton(d) then
             pressButton(d)
             claimed = claimed + 1
         end
     end
-    
     return claimed
 end
 
 task.spawn(function()
     while task.wait(CONFIG.CLAIM_INTERVAL) do
         pcall(function()
-            local playerGui = player:FindFirstChild("PlayerGui")
-            if not playerGui then return end
-            
-            local mainGui = playerGui:FindFirstChild("Main")
+            local playerGuiRef = player:FindFirstChild("PlayerGui")
+            if not playerGuiRef then return end
+            local mainGui = playerGuiRef:FindFirstChild("Main")
             if not mainGui then return end
-            
             local frames = mainGui:FindFirstChild("Frames")
             if not frames then return end
             
             local totalClaimed = 0
             
-            -- PATH 1: Events (Merits) - PlaytimeRewards folder
+            -- Path 1: Events (Merits)
             pcall(function()
                 local eventsFrame = frames:FindFirstChild("Events")
                 if eventsFrame then
@@ -1439,7 +1493,7 @@ task.spawn(function()
                 end
             end)
             
-            -- PATH 2: Shop (Time Reward) - numeric folder names
+            -- Path 2: Shop (Time Reward)
             pcall(function()
                 local shopFrame = frames:FindFirstChild("Shop")
                 if shopFrame then
@@ -1465,16 +1519,23 @@ task.spawn(function()
     end
 end)
 
+-- ============================================================
 -- INITIAL SCAN
-local npcs = getAllNPCs()
-CountLabel.Text = "NPC Detected: " .. #npcs
+-- ============================================================
+task.spawn(function()
+    local npcs = getAllNPCs()
+    cachedNPCCount = #npcs
+    NPCCountLabel.Text = "NPC Detected: " .. cachedNPCCount
+end)
 
+-- ============================================================
 -- DONE
+-- ============================================================
 print("=========================================")
-print("  AUTOFARM v5.4 - DUAL PATH CLAIM")
+print("  AUTOFARM v6.1 - ESSENCE LEAF EDITION")
 print("  Script Created by ADIEL")
 print("=========================================")
 print("Target NPC: Scorpion, Tombguardian, Water Serpent")
-print("Plant: Ginseng, Spirit Grass")
+print("Plant: Ginseng, Spirit Grass, Essence Leaf")
 print("Reward Claim: Events + Shop PlaytimeRewards")
 print("Anti-AFK: CaptureController")
