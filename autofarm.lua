@@ -46,11 +46,12 @@ local CONFIG = {
     AUTO_RESPAWN = true,
     
     PLANT_NAMES = {
-        "Ginseng",
+        "Lotus",
         "Spirit Grass",
         "SpiritGrass",
         "Essence Leaf",
         "EssenceLeaf",
+  
     },
     PLANT_SCAN_DELAY = 3,
     PLANT_MAX_DEPTH = 6,
@@ -1536,6 +1537,6 @@ print("  AUTOFARM v6.1 - ESSENCE LEAF EDITION")
 print("  Script Created by ADIEL")
 print("=========================================")
 print("Target NPC: Scorpion, Tombguardian, Water Serpent")
-print("Plant: Ginseng, Spirit Grass, Essence Leaf")
+print("Plant: Lotus, Spirit Grass, Essence Leaf")
 print("Reward Claim: Events + Shop PlaytimeRewards")
 print("Anti-AFK: CaptureController")
