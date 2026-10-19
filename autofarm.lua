@@ -1,6 +1,6 @@
 --[[
 =========================================================
-  UNIVERSAL AUTOFARM v6.1 - CYBERPUNK RED GUI + ESSENCE LEAF
+  UNIVERSAL AUTOFARM v6.2 - LOTUS EXACT MATCH
   Author: Kyriel (for ADIEL)
   Executor: Delta / Codex / Wave / Xeno
 
@@ -9,7 +9,9 @@ FITUR:
   - ULTRA FAST Kill rate
   - Auto-next-target (seamless kill)
   - Anti-death (auto respawn)
-  - Stealth Plant Collector (Ginseng, Spirit Grass, Essence Leaf)
+  - Stealth Plant Collector:
+    * Ginseng, Spirit Grass, Essence Leaf (partial match)
+    * Lotus (EXACT match only, skip Pearl/Ice/other variants)
   - AUTO CLAIM PLAYTIME REWARDS (dual path)
   - ANTI-AFK (CaptureController)
   - GUI CYBERPUNK RED
@@ -46,13 +48,25 @@ local CONFIG = {
     AUTO_RESPAWN = true,
     
     PLANT_NAMES = {
+        "Ginseng",
         "Lotus",
         "Spirit Grass",
         "SpiritGrass",
         "Essence Leaf",
         "EssenceLeaf",
-  
     },
+    
+    PLANT_BLACKLIST = {
+        "Pearl Lotus",
+        "PearlLotus",
+        "Ice Lotus",
+        "IceLotus",
+        "Snow Lotus",
+        "SnowLotus",
+        "Golden Lotus",
+        "GoldenLotus",
+    },
+    
     PLANT_SCAN_DELAY = 3,
     PLANT_MAX_DEPTH = 6,
     FORCE_PROMPT_DISTANCE = true,
@@ -420,6 +434,24 @@ end
 -- ============================================================
 local function isPlantName(name)
     local nameLower = string.lower(name)
+    
+    -- Cek blacklist dulu (skip Pearl Lotus, Ice Lotus, dll)
+    for _, blackItem in ipairs(CONFIG.PLANT_BLACKLIST) do
+        if string.find(nameLower, string.lower(blackItem)) then
+            return false, ""
+        end
+    end
+    
+    -- Khusus untuk "Lotus": harus EXACT match (cuma "Lotus" doang)
+    if string.find(nameLower, "lotus") then
+        local trimmed = string.match(nameLower, "^%s*(.-)%s*$")
+        if trimmed == "lotus" then
+            return true, "Lotus"
+        end
+        return false, ""
+    end
+    
+    -- Untuk plant lain: partial match biasa
     for _, plantName in ipairs(CONFIG.PLANT_NAMES) do
         if string.find(nameLower, string.lower(plantName)) then
             return true, plantName
@@ -849,7 +881,7 @@ addGradient(TitleFill, titleSeq, 0)
 
 create("TextLabel", {
     Name = "TitleShadow",
-    Text = "AUTOFARM v6.1 - by ADIEL",
+    Text = "AUTOFARM v6.2 - by ADIEL",
     Position = UDim2.new(0, 16, 0, 5),
     Size = UDim2.new(1, -120, 0, 22),
     BackgroundTransparency = 1,
@@ -862,7 +894,7 @@ create("TextLabel", {
 
 local TitleText = create("TextLabel", {
     Name = "TitleText",
-    Text = "AUTOFARM v6.1 - by ADIEL",
+    Text = "AUTOFARM v6.2 - by ADIEL",
     Position = UDim2.new(0, 14, 0, 3),
     Size = UDim2.new(1, -120, 0, 22),
     BackgroundTransparency = 1,
@@ -1096,7 +1128,7 @@ makeHeader(PlantCol, "PLANT COLLECTOR")
 
 local StartPlantBtn = makeButton(PlantCol, "START PLANT COLLECTOR", UDim2.new(0, 10, 0, 44), btnSize, "primary", 13)
 local InstantCollectBtn = makeButton(PlantCol, "COLLECT SEKARANG", UDim2.new(0, 10, 0, 88), btnSize, "outlineRed", 13)
-makeInfoBlock(PlantCol, "Plants: Ginseng, Spirit Grass, Essence Leaf", 136)
+makeInfoBlock(PlantCol, "Plants: Ginseng, Lotus, Spirit Grass, Essence Leaf", 136)
 makeInfoBlock(PlantCol, "NPC: Scorpion, Tombguardian, Water Serpent", 196)
 
 -- CONSOLE POPUP
@@ -1332,7 +1364,6 @@ InstantCollectBtn.MouseButton1Click:Connect(function()
     InstantCollectBtn.Text = "COLLECT SEKARANG"
 end)
 
--- Console toggle
 ConsoleBtn.MouseButton1Click:Connect(function()
     ConsolePopup.Visible = not ConsolePopup.Visible
 end)
@@ -1350,7 +1381,6 @@ ClearBtn.MouseButton1Click:Connect(function()
     logOrder = 0
 end)
 
--- Minimize
 MinimizeBtn.MouseButton1Click:Connect(function()
     local info = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
     if MainFrame.Size.Y.Offset > 50 then
@@ -1362,7 +1392,6 @@ MinimizeBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Close -> bubble
 CloseBtn.MouseButton1Click:Connect(function()
     MainFrame.Visible = false
     Bubble.Position = MainFrame.Position
@@ -1425,7 +1454,7 @@ player.Idled:Connect(function()
 end)
 
 -- ============================================================
--- AUTO CLAIM PLAYTIME REWARDS (DUAL PATH)
+-- AUTO CLAIM PLAYTIME REWARDS
 -- ============================================================
 local function pressButton(btn)
     for _, sig in ipairs({"MouseButton1Click", "Activated", "MouseButton1Down", "MouseButton1Up"}) do
@@ -1476,7 +1505,6 @@ task.spawn(function()
             
             local totalClaimed = 0
             
-            -- Path 1: Events (Merits)
             pcall(function()
                 local eventsFrame = frames:FindFirstChild("Events")
                 if eventsFrame then
@@ -1494,7 +1522,6 @@ task.spawn(function()
                 end
             end)
             
-            -- Path 2: Shop (Time Reward)
             pcall(function()
                 local shopFrame = frames:FindFirstChild("Shop")
                 if shopFrame then
@@ -1533,10 +1560,11 @@ end)
 -- DONE
 -- ============================================================
 print("=========================================")
-print("  AUTOFARM v6.1 - ESSENCE LEAF EDITION")
+print("  AUTOFARM v6.2 - LOTUS EXACT MATCH")
 print("  Script Created by ADIEL")
 print("=========================================")
 print("Target NPC: Scorpion, Tombguardian, Water Serpent")
-print("Plant: Lotus, Spirit Grass, Essence Leaf")
+print("Plant: Ginseng, Lotus, Spirit Grass, Essence Leaf")
+print("Excluded: Pearl Lotus, Ice Lotus (varian)")
 print("Reward Claim: Events + Shop PlaytimeRewards")
 print("Anti-AFK: CaptureController")
